@@ -1,0 +1,153 @@
+.home-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.home-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.home-sidebar-header {
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.home-sidebar-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.home-sidebar-nav {
+  padding: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  margin: 0 0.5rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.home-nav-item:hover {
+  color: var(--fg);
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.home-nav-item--active {
+  color: var(--primary);
+  background: rgba(15, 118, 110, 0.12);
+}
+
+.home-nav-item--active:hover {
+  color: var(--primary);
+  background: rgba(15, 118, 110, 0.16);
+}
+
+.home-main {
+  flex: 1;
+  padding: 1.5rem 2rem;
+  overflow: auto;
+}
+
+.home-header {
+  margin-bottom: 1.5rem;
+}
+
+.home-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.home-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.home-content {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.home-table-wrap {
+  overflow-x: auto;
+}
+
+.home-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.home-table th,
+.home-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.home-table th {
+  font-weight: 600;
+  color: var(--muted);
+  background: #f8fafc;
+}
+
+.home-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.home-table tbody tr:hover {
+  background: rgba(15, 118, 110, 0.04);
+}
+
+.home-mrn {
+  font-size: 0.85em;
+  padding: 0.2em 0.45em;
+  background: #f1f5f9;
+  border-radius: 4px;
+  color: var(--fg);
+}
+
+.home-badge {
+  display: inline-block;
+  padding: 0.25em 0.6em;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.home-badge--active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.home-table-caption {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}

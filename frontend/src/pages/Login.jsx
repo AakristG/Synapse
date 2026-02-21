@@ -11,7 +11,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />
+  if (isAuthenticated) return <Navigate to="/consultation" replace />
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -19,7 +19,7 @@ export default function Login() {
     setBusy(true)
     try {
       await login(username.trim(), password)
-      navigate('/dashboard', { replace: true })
+      navigate('/consultation', { replace: true })
     } catch (err) {
       setError(err.message || 'Login failed.')
     } finally {
