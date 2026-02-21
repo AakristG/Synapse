@@ -1,0 +1,280 @@
+.dashboard {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.dashboard-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.dashboard-role {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dashboard-actions a {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.dashboard-actions a:hover {
+  text-decoration: underline;
+}
+
+.btn-logout {
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.btn-logout:hover {
+  color: var(--fg);
+  border-color: var(--muted);
+}
+
+.dashboard-section {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.dashboard-section h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.section-hint {
+  margin: 0 0 1.25rem 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.record-controls {
+  margin-bottom: 1rem;
+}
+
+.btn-record {
+  padding: 0.65rem 1.25rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-record:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-stop {
+  padding: 0.65rem 1.25rem;
+  background: #b91c1c;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-stop:hover {
+  filter: brightness(1.05);
+}
+
+.record-status {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.status-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.result-error {
+  padding: 0.75rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.extraction-result h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.result-block {
+  margin-bottom: 1rem;
+}
+
+.result-block h4 {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.result-block ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.result-block p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.transcript-text {
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.result-warning {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #b45309;
+}
+
+.gemini-question {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+
+.gemini-question h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.question-text {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+}
+
+.btn-record-again {
+  padding: 0.5rem 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-record-again:hover {
+  filter: brightness(1.05);
+}
+
+.intake-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.intake-fields .field {
+  font-size: 0.95rem;
+}
+
+.document-block {
+  margin-top: 1rem;
+}
+
+.document-first {
+  margin-top: 0;
+  margin-bottom: 1.25rem;
+}
+
+.document-first h3 {
+  margin: 0 0 0.5rem 0;
+}
+
+.record-more {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.record-more-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.document-text {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0 0;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.document-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.btn-copy,
+.btn-download {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.875rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.btn-copy:hover,
+.btn-download:hover {
+  background: var(--border);
+}

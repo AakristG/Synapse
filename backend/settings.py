@@ -130,5 +130,5 @@ REST_FRAMEWORK = {
 }
 CORS_ALLOW_ALL_ORIGINS = True  # restrict in production
 
-# Optional: set in environment
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
+GEMINI_API_KEY = os.environ.get('AIzaSyDj7lgg6XvDv63ccNnAgWRuCBahe220dts', '')
