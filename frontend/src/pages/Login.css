@@ -31,41 +31,6 @@
   text-align: center;
 }
 
-.login-already-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.login-already-btn {
-  display: block;
-  text-align: center;
-  padding: 0.7rem 1rem;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  text-decoration: none;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.login-already-btn:hover {
-  background: #f1f5f9;
-  border-color: var(--muted);
-}
-
-.login-already-btn--primary {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
-.login-already-btn--primary:hover {
-  filter: brightness(1.05);
-}
-
 .login-card form label {
   display: block;
   margin-bottom: 1rem;
