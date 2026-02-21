@@ -1,4 +1,24 @@
 from django.db import models
+from django.conf import settings
+
+
+class UserProfile(models.Model):
+    """Role for EMT, nurse, or physician."""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile'
+    )
+    role = models.CharField(
+        max_length=16,
+        choices=[
+            ('emt', 'EMT'),
+            ('nurse', 'Nurse'),
+            ('physician', 'Physician'),
+        ],
+        default='physician',
+    )
+
+    def __str__(self):
+        return f"{self.user.username} ({self.get_role_display()})"
 
 
 class Conversation(models.Model):

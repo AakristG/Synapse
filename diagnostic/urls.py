@@ -1,7 +1,10 @@
 from django.urls import path
-from . import views
+from . import views, auth_views
 
 urlpatterns = [
+    path('auth/login/', auth_views.login),
+    path('auth/me/', auth_views.me),
+    path('audio/extract/', views.audio_extract),
     path('conversations/', views.conversation_list),
     path('conversations/<int:pk>/', views.conversation_detail),
     path('conversations/<int:pk>/transcripts/', views.add_transcript),

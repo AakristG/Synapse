@@ -1,8 +1,10 @@
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .gemini_service import extract_from_audio
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -181,4 +183,36 @@ def export_emr(request, pk):
         'export_id': export.id,
         'status': export.status,
         'payload': payload,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def audio_extract(request):
+    """
+    Accept multipart form with 'audio' file. Send to Gemini and return
+    { vitals, symptoms, diagnosis, transcript, error? }.
+    """
+    audio_file = request.FILES.get('audio')
+    if not audio_file:
+        return Response(
+            {'detail': 'Missing "audio" file.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    audio_bytes = audio_file.read()
+    mime = audio_file.content_type or 'audio/webm'
+    if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
+        mime = 'audio/webm'
+    result = extract_from_audio(audio_bytes, mime_type=mime)
+    if result.get('error') and not result.get('transcript'):
+        return Response(
+            {'detail': result['error'], 'vitals': {}, 'symptoms': [], 'diagnosis': ''},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    return Response({
+        'vitals': result.get('vitals', {}),
+        'symptoms': result.get('symptoms', []),
+        'diagnosis': result.get('diagnosis', ''),
+        'transcript': result.get('transcript', ''),
+        'error': result.get('error', ''),
     }, status=status.HTTP_200_OK)

@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -123,5 +124,11 @@ STATIC_URL = 'static/'
 # REST and CORS (dev: allow React origin)
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
 }
 CORS_ALLOW_ALL_ORIGINS = True  # restrict in production
+
+# Optional: set in environment
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')

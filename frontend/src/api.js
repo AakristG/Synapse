@@ -1,17 +1,31 @@
 const API_BASE = '/api';
 
+function getStoredToken() {
+  return localStorage.getItem('token') || '';
+}
+
 async function request(path, options = {}) {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  });
+  const headers = { ...options.headers };
+  const token = getStoredToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+
+  const res = await fetch(url, { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
   return data;
 }
 
 export const api = {
+  login: (username, password) =>
+    request('/auth/login/', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  me: () => request('/auth/me/'),
+  extractAudio: (audioBlob) => {
+    const form = new FormData();
+    form.append('audio', audioBlob, 'recording.webm');
+    return request('/audio/extract/', { method: 'POST', body: form });
+  },
   listConversations: () => request('/conversations/'),
   getConversation: (id) => request(`/conversations/${id}/`),
   createConversation: (body) => request('/conversations/', { method: 'POST', body: JSON.stringify(body || {}) }),

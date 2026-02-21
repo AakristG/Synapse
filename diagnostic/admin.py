@@ -1,5 +1,9 @@
 from django.contrib import admin
-from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .models import UserProfile, Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'role')
 
 @admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
