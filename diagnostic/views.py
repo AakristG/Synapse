@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
-from .gemini_service import extract_from_audio
+from .gemini_service import intake_from_audio
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -190,8 +190,8 @@ def export_emr(request, pk):
 @permission_classes([IsAuthenticated])
 def audio_extract(request):
     """
-    Accept multipart form with 'audio' file. Send to Gemini and return
-    { vitals, symptoms, diagnosis, transcript, error? }.
+    Accept multipart form: 'audio' file, optional 'previous_context' (text from prior turn).
+    Gemini runs clinical intake: asks for name/age/report if missing, extracts vitals/symptoms/diagnosis, returns document.
     """
     audio_file = request.FILES.get('audio')
     if not audio_file:
@@ -203,16 +203,23 @@ def audio_extract(request):
     mime = audio_file.content_type or 'audio/webm'
     if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
         mime = 'audio/webm'
-    result = extract_from_audio(audio_bytes, mime_type=mime)
-    if result.get('error') and not result.get('transcript'):
+    previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
+    result = intake_from_audio(audio_bytes, mime_type=mime, previous_context=previous_context)
+    if result.get('error') and not result.get('transcript') and not result.get('document'):
         return Response(
-            {'detail': result['error'], 'vitals': {}, 'symptoms': [], 'diagnosis': ''},
+            {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'document', 'transcript']}},
             status=status.HTTP_502_BAD_GATEWAY,
         )
     return Response({
+        'missing': result.get('missing', []),
+        'question': result.get('question'),
+        'name': result.get('name', ''),
+        'age': result.get('age', ''),
+        'report': result.get('report', ''),
         'vitals': result.get('vitals', {}),
         'symptoms': result.get('symptoms', []),
         'diagnosis': result.get('diagnosis', ''),
+        'document': result.get('document', ''),
         'transcript': result.get('transcript', ''),
         'error': result.get('error', ''),
     }, status=status.HTTP_200_OK)

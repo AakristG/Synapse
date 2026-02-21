@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic,
   Square,
@@ -20,18 +20,7 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
-
-const MOCK_TRANSCRIPT_LINES = [
-  { speaker: 'Clinician', text: 'Good morning Emma, how are you feeling today?' },
-  { speaker: 'Patient', text: "Hi Dr. Sarah, I've been feeling quite weak lately. I've had a persistent cough for about three days now." },
-  { speaker: 'Clinician', text: "I'm sorry to hear that. Any fever or body aches?" },
-  { speaker: 'Patient', text: 'Yes, I had a slight fever last night, around 101 degrees, and my chest feels a bit tight when I breathe deeply.' },
-  { speaker: 'Clinician', text: "Okay, let's take a look. I'll check your vitals first. Blood pressure is 120 over 80. Heart rate is 88 beats per minute. Temperature is currently 99.4." },
-  { speaker: 'Clinician', text: "Your lungs sound a bit congested on the lower left side. I suspect it might be a mild case of bronchitis, but we'll run some tests." },
-  { speaker: 'Patient', text: 'What kind of tests?' },
-  { speaker: 'Clinician', text: "We'll do a quick chest X-ray and a throat swab. In the meantime, I'll prescribe some Albuterol for the tightness and suggest rest." },
-  { speaker: 'Clinician', text: "I'll update your recovery plan. Make sure to drink plenty of fluids and follow up if the cough worsens or you see blood." },
-]
+import { api } from '../api'
 
 export default function Consultation() {
   const [isRecording, setIsRecording] = useState(false)
@@ -42,18 +31,26 @@ export default function Consultation() {
   const [symptoms, setSymptoms] = useState([])
   const [diagnosis, setDiagnosis] = useState([])
   const [meds, setMeds] = useState([])
+  const [documentText, setDocumentText] = useState('')
   const fileInputRef = useRef(null)
   const transcriptEndRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
 
-  const processTranscriptLine = (line) => {
-    const text = line.text
-    if (text.includes('cough')) setSymptoms((prev) => [...new Set([...prev, 'Persistent cough'])])
-    if (text.includes('weak')) setSymptoms((prev) => [...new Set([...prev, 'Generalized weakness'])])
-    if (text.includes('fever')) setSymptoms((prev) => [...new Set([...prev, 'Febrile illness'])])
-    if (text.includes('tight')) setSymptoms((prev) => [...new Set([...prev, 'Chest tightness'])])
-    if (text.includes('bronchitis')) setDiagnosis((prev) => [...new Set([...prev, 'Acute Bronchitis (J20.9)'])])
-    if (text.includes('Albuterol')) setMeds((prev) => [...new Set([...prev, 'Albuterol Inhaler (90mcg)'])])
-  }
+  const applyExtractionResult = useCallback((result) => {
+    if (result.transcript) {
+      setTranscript([{ speaker: 'Clinician', text: result.transcript }])
+    }
+    if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
+      setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
+    }
+    if (result.diagnosis) {
+      setDiagnosis([result.diagnosis])
+    }
+    if (result.document) {
+      setDocumentText(result.document)
+    }
+  }, [])
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
@@ -63,43 +60,78 @@ export default function Consultation() {
   const scrollToBottom = () => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   useEffect(() => { scrollToBottom() }, [transcript])
 
-  const startSession = () => {
+  const startSession = useCallback(() => {
     resetSession()
-    setIsRecording(true)
-  }
+    chunksRef.current = []
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        const mr = new MediaRecorder(stream)
+        mediaRecorderRef.current = mr
+        mr.ondataavailable = (e) => {
+          if (e.data.size) chunksRef.current.push(e.data)
+        }
+        mr.onstop = () => stream.getTracks().forEach((t) => t.stop())
+        mr.start()
+        setIsRecording(true)
+        toast.info('Microphone active — recording started.')
+      })
+      .catch(() => {
+        toast.error('Microphone access denied or unavailable.')
+      })
+  }, [])
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
+    if (!mediaRecorderRef.current || !isRecording) return
+    mediaRecorderRef.current.stop()
     setIsRecording(false)
+    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
     setIsProcessing(true)
-    toast.info('Creating transcript from recording...')
-    setTimeout(() => {
-      setTranscript(MOCK_TRANSCRIPT_LINES)
-      MOCK_TRANSCRIPT_LINES.forEach((line) => processTranscriptLine(line))
-      setIsProcessing(false)
-      toast.success('Recording transcribed and analyzed.')
-    }, 3000)
-  }
+    toast.info('Creating transcript from your recording...')
+    api
+      .extractAudio(blob)
+      .then((data) => {
+        applyExtractionResult(data)
+        toast.success('Recording transcribed and analyzed.')
+      })
+      .catch((err) => {
+        toast.error(err.message || 'Transcription failed.')
+      })
+      .finally(() => setIsProcessing(false))
+  }, [isRecording, applyExtractionResult])
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
+  const handleFileUpload = useCallback(
+    (e) => {
+      const file = e.target.files?.[0]
+      if (!file) return
       resetSession()
       setIsUploading(true)
-      toast.info(`Uploading ${file.name}...`)
-      setTimeout(() => {
-        setTranscript(MOCK_TRANSCRIPT_LINES)
-        MOCK_TRANSCRIPT_LINES.forEach((line) => processTranscriptLine(line))
-        setIsUploading(false)
-        toast.success('Recording transcribed and analyzed.')
-      }, 3000)
-    }
-  }
+      toast.info(`Processing ${file.name}...`)
+      const reader = new FileReader()
+      reader.onload = () => {
+        const blob = new Blob([reader.result], { type: file.type || 'audio/webm' })
+        api
+          .extractAudio(blob)
+          .then((data) => {
+            applyExtractionResult(data)
+            toast.success('Audio transcribed and analyzed.')
+          })
+          .catch((err) => {
+            toast.error(err.message || 'Transcription failed.')
+          })
+          .finally(() => setIsUploading(false))
+      }
+      reader.readAsArrayBuffer(file)
+    },
+    [applyExtractionResult]
+  )
 
   const resetSession = () => {
     setTranscript([])
     setSymptoms([])
     setDiagnosis([])
     setMeds([])
+    setDocumentText('')
   }
 
   const handleSendSummary = () => {
@@ -387,13 +419,19 @@ export default function Consultation() {
                       <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
                       Patient Recovery Guide
                     </h4>
-                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative">
-                      Based on today&apos;s visit, your primary diagnosis is Acute Bronchitis. Focus on rest and hydration.
-                    </p>
-                    <div className="mt-4 pt-4 border-t border-white/10 relative">
-                      <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest mb-2">Key Instruction</p>
-                      <p className="text-xs italic">&quot;Use Albuterol inhaler twice daily or as needed for chest tightness.&quot;</p>
-                    </div>
+                    {documentText ? (
+                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{documentText}</p>
+                    ) : (
+                      <>
+                        <p className="text-[13px] leading-relaxed opacity-90 font-medium relative">
+                          Record or upload audio to generate a clinical document from your dictation.
+                        </p>
+                        <div className="mt-4 pt-4 border-t border-white/10 relative">
+                          <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest mb-2">From your recording</p>
+                          <p className="text-xs italic opacity-80">Vitals, symptoms, diagnosis, and recovery plan will appear here.</p>
+                        </div>
+                      </>
+                    )}
               </div>
               <div className="space-y-3">
                 <h5 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Follow-up Tasks</h5>

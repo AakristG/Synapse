@@ -21,9 +21,10 @@ export const api = {
   login: (username, password) =>
     request('/auth/login/', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => request('/auth/me/'),
-  extractAudio: (audioBlob) => {
+  extractAudio: (audioBlob, previousContext = '') => {
     const form = new FormData();
     form.append('audio', audioBlob, 'recording.webm');
+    if (previousContext) form.append('previous_context', previousContext);
     return request('/audio/extract/', { method: 'POST', body: form });
   },
   listConversations: () => request('/conversations/'),
