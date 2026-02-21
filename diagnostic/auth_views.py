@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _user_response(user):
     profile = getattr(user, "profile", None)
-    role = profile.role if profile else "physician"
+    role = getattr(profile, "role", "physician") if profile else "physician"
     return {
         "id": user.id,
         "username": user.username,
@@ -24,6 +24,7 @@ def _user_response(user):
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def login(request):
     """POST { username, password } -> { access, refresh, user: { id, username, role } }"""
     try:
@@ -43,12 +44,25 @@ def login(request):
                 {"detail": "Invalid credentials."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"role": "physician"})
-        refresh = RefreshToken.for_user(user)
+        try:
+            profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"role": "physician"})
+            role = profile.role
+        except Exception as e:
+            logger.warning("UserProfile get_or_create failed: %s", e)
+            role = "physician"
+        try:
+            refresh = RefreshToken.for_user(user)
+        except Exception as e:
+            logger.exception("JWT token creation failed")
+            detail = str(e) if settings.DEBUG else "Token error during login."
+            return Response(
+                {"detail": detail},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         user_dict = {
             "id": user.id,
             "username": user.username,
-            "role": profile.role,
+            "role": role,
         }
         return Response({
             "access": str(refresh.access_token),
