@@ -120,7 +120,6 @@ export default function Consultation() {
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
         <div className="flex items-center gap-6">
-          <p className="text-sm font-bold leading-tight text-neutral-800">Dr. Sarah Chen</p>
           <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
             <Clock size={14} />
             {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -262,8 +261,8 @@ export default function Consultation() {
         <aside className="flex-1 min-w-0 flex gap-4 flex-col min-h-0">
           <div className="shrink-0 flex items-center justify-between gap-4">
             <div>
-              <h3 className="font-bold text-base text-neutral-800">Emma Watson</h3>
-              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wide">ID: #9902 • 28y Female</p>
+              <h3 className="font-bold text-base text-neutral-800">Maria Santos</h3>
+              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wide">ID: #1001 • 40y Female</p>
             </div>
             <button
               onClick={resetSession}
