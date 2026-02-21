@@ -1,0 +1,184 @@
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .serializers import (
+    ConversationSerializer,
+    TranscriptSerializer,
+    ClinicalNoteSerializer,
+    PatientSummarySerializer,
+)
+from .services import (
+    generate_session_id,
+    transcribe_audio_stub,
+    summarize_and_extract_stub,
+    map_icd_and_treatments_stub,
+    patient_friendly_summary_stub,
+    build_emr_payload,
+)
+
+
+@api_view(['GET', 'POST'])
+def conversation_list(request):
+    if request.method == 'GET':
+        conversations = Conversation.objects.all()[:50]
+        serializer = ConversationSerializer(conversations, many=True)
+        return Response(serializer.data)
+    # POST: create new conversation
+    data = request.data or {}
+    session_id = data.get('session_id') or generate_session_id()
+    conv = Conversation.objects.create(
+        session_id=session_id,
+        source=data.get('source', 'consultation'),
+        language=data.get('language', 'en'),
+        metadata=data.get('metadata', {}),
+    )
+    serializer = ConversationSerializer(conv)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+def conversation_detail(request, pk):
+    try:
+        conv = Conversation.objects.get(pk=pk)
+    except Conversation.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    serializer = ConversationSerializer(conv)
+    out = serializer.data
+    if hasattr(conv, 'clinical_note'):
+        out['clinical_note'] = ClinicalNoteSerializer(conv.clinical_note).data
+    else:
+        out['clinical_note'] = None
+    if hasattr(conv, 'patient_summary'):
+        out['patient_summary'] = PatientSummarySerializer(conv.patient_summary).data
+    else:
+        out['patient_summary'] = None
+    return Response(out)
+
+
+@api_view(['POST'])
+def add_transcript(request, pk):
+    try:
+        conv = Conversation.objects.get(pk=pk)
+    except Conversation.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    data = request.data or {}
+    role = data.get('role', 'clinician')
+    text = data.get('text', '').strip()
+    if not text:
+        return Response({'detail': 'Missing "text".'}, status=status.HTTP_400_BAD_REQUEST)
+    transcript = Transcript.objects.create(
+        conversation=conv,
+        role=role,
+        text=text,
+        raw_audio_duration_seconds=data.get('raw_audio_duration_seconds'),
+        extra=data.get('extra', {}),
+    )
+    return Response(TranscriptSerializer(transcript).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+def transcribe(request, pk):
+    """Speech-to-Text: accept audio URL or raw text, append transcript to conversation."""
+    try:
+        conv = Conversation.objects.get(pk=pk)
+    except Conversation.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    data = request.data or {}
+    audio_url_or_text = data.get('text') or data.get('audio_url') or data.get('audio_text') or ''
+    result = transcribe_audio_stub(audio_url_or_text)
+    text = result['text']
+    Transcript.objects.create(
+        conversation=conv,
+        role=data.get('role', 'clinician'),
+        text=text,
+        raw_audio_duration_seconds=result.get('duration_seconds'),
+        extra={'confidence': result.get('confidence'), 'language': result.get('language')},
+    )
+    return Response({
+        'transcript': result,
+        'message': 'Transcript appended to conversation.',
+    }, status=status.HTTP_200_OK)
+
+
+def _get_conversation_text(conv):
+    parts = list(conv.transcripts.order_by('created_at').values_list('text', flat=True))
+    return '\n'.join(parts) or 'No transcript yet.'
+
+
+@api_view(['POST'])
+def summarize(request, pk):
+    """AI-powered summarization: extract vitals, symptoms, diagnosis; ICD mapping; patient-friendly summary."""
+    try:
+        conv = Conversation.objects.get(pk=pk)
+    except Conversation.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    full_text = _get_conversation_text(conv)
+    extracted = summarize_and_extract_stub(full_text)
+    icd_and_treatments = map_icd_and_treatments_stub(extracted)
+    patient_plain = patient_friendly_summary_stub(
+        extracted,
+        icd_and_treatments.get('suggested_treatments', []),
+    )
+
+    # Create or update ClinicalNote
+    full_note = extracted.get('full_note_text', '')
+    note, _ = ClinicalNote.objects.update_or_create(
+        conversation=conv,
+        defaults={
+            'vitals': extracted.get('vitals', {}),
+            'symptoms': extracted.get('symptoms', []),
+            'assessment': extracted.get('assessment', ''),
+            'diagnosis_summary': extracted.get('diagnosis_summary', ''),
+            'icd_codes': icd_and_treatments.get('icd_codes', []),
+            'suggested_treatments': icd_and_treatments.get('suggested_treatments', []),
+            'full_note_text': full_note,
+        },
+    )
+
+    # Create or update PatientSummary
+    summary_obj, _ = PatientSummary.objects.update_or_create(
+        conversation=conv,
+        defaults={
+            'summary_text': patient_plain.get('summary_text', ''),
+            'recovery_plan': patient_plain.get('recovery_plan', ''),
+            'medications_plain': patient_plain.get('medications_plain', []),
+            'follow_up_instructions': patient_plain.get('follow_up_instructions', ''),
+        },
+    )
+
+    return Response({
+        'clinical_note': ClinicalNoteSerializer(note).data,
+        'patient_summary': PatientSummarySerializer(summary_obj).data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+def export_emr(request, pk):
+    """Lightweight EMR export: create audit record and return payload for plug-in/API."""
+    try:
+        conv = Conversation.objects.get(pk=pk)
+    except Conversation.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    clinical_data = {}
+    patient_data = {}
+    if hasattr(conv, 'clinical_note'):
+        clinical_data = ClinicalNoteSerializer(conv.clinical_note).data
+    if hasattr(conv, 'patient_summary'):
+        patient_data = PatientSummarySerializer(conv.patient_summary).data
+
+    payload = build_emr_payload(conv.id, clinical_data, patient_data)
+    export = EMRExport.objects.create(
+        conversation=conv,
+        external_system=request.data.get('external_system', ''),
+        payload_snapshot=payload,
+        status='sent',
+    )
+    return Response({
+        'export_id': export.id,
+        'status': export.status,
+        'payload': payload,
+    }, status=status.HTTP_200_OK)

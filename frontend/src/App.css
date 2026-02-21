@@ -1,0 +1,40 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.app-header .logo {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.app-header .logo:hover {
+  color: var(--primary);
+}
+
+.app-header nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.app-header nav a:hover {
+  color: var(--fg);
+}
+
+.app-main {
+  flex: 1;
+  padding: 1.5rem;
+}

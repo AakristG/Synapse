@@ -1,0 +1,106 @@
+.conversation-list {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.list-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.create-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.create-row select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.create-row button {
+  padding: 0.5rem 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.create-row button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.error-banner {
+  background: #fef2f2;
+  color: #b91c1c;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.empty {
+  color: var(--muted);
+  margin: 2rem 0;
+}
+
+.conversation-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.conversation-cards .card {
+  display: block;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.conversation-cards .card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.card-source {
+  text-transform: capitalize;
+  font-weight: 600;
+  color: var(--primary);
+  margin-right: 0.5rem;
+}
+
+.card-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.card-date,
+.card-meta {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
