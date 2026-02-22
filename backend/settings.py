@@ -16,7 +16,7 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env from project root so GEMINI_API_KEY, TWILIO_*, etc. are set when running runserver
+# Load .env from project root
 _env_file = BASE_DIR / ".env"
 if _env_file.exists():
     try:
@@ -30,7 +30,7 @@ if _env_file.exists():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-k(xqs%uvo5!s4+@0qgi-ngkf@h^x2mi8ows2fja%6u&u3_o^)f'
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-fallback-secret")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -166,10 +166,5 @@ LOGGING = {
 # TODO: When making repo public change GEMINI_API_KEY to an empty string and set the value in the .env file
 
 # Gemini API: set env var GEMINI_API_KEY or set the value here (avoid committing real keys).
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '') or 'AIzaSyA6YfpylqDLAiplIqa-PoKQ8ggXwAZ7TMM'
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
-# Twilio Voice (patient intake calls). Loaded from .env.
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "") or 'ACf573843f3374b0ce761427b5555a2cd2'
-
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "") or '3a77aa6701eebb3711e580fec1faa4a1'
-TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "") or '+18776119923'

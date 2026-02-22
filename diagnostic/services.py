@@ -1,7 +1,6 @@
 """
 Diagnostic assistant services.
 Stub implementations for Speech-to-Text, summarization, ICD mapping, and patient summaries.
-Replace with real STT/AI providers (e.g. Whisper, OpenAI, Azure Health) for production.
 """
 import re
 import uuid

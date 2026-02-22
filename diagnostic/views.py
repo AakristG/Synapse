@@ -230,7 +230,7 @@ def recorded_patients_create(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def recorded_patients_list(request):
-    """List recorded patients (Synapse + Twilio). Same shape as frontend expects."""
+    # List recorded patients (Synapse). Same shape as frontend expects.
     patients = RecordedPatient.objects.all()[:100]
     out = []
     for p in patients:
