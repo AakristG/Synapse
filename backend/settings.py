@@ -132,10 +132,10 @@ CORS_ALLOW_ALL_ORIGINS = True  # restrict in production
 
 
 # Gemini API: set env var GEMINI_API_KEY or set the value here (avoid committing real keys).
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '') or 'AIzaSyA6YfpylqDLAiplIqa-PoKQ8ggXwAZ7TMM'
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 # Twilio Voice (patient intake calls). Loaded from .env.
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "") or "ACf573843f3374b0ce761427b5555a2cd2"
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "") or "3a77aa6701eebb3711e580fec1faa4a1"
-TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "") or "+18776119923"
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "")
