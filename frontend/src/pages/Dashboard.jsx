@@ -131,8 +131,8 @@ export default function Dashboard() {
                       <div className="result-block">
                         <h4>Vitals</h4>
                         <ul>
-                          {Object.entries(result.vitals).map(([k, v]) => (
-                            <li key={k}><strong>{k.replace(/_/g, ' ')}</strong>: {String(v)}</li>
+                          {Object.entries(result.vitals).map(([k, v], i) => (
+                            <li key={k ? `vital-${k}` : `vital-${i}`}><strong>{(k || 'value').replace(/_/g, ' ')}</strong>: {String(v)}</li>
                           ))}
                         </ul>
                       </div>

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AuthProvider } from './context/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Consultation from './pages/Consultation'
@@ -14,7 +15,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/consultation" element={<Consultation />} />
+          <Route path="/consultation" element={<ProtectedRoute><Consultation /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -6,12 +6,14 @@ function getStoredToken() {
 
 async function request(path, options = {}) {
   const url = `${API_BASE}${path}`;
-  const headers = { ...options.headers };
   const token = getStoredToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const headers = {
+    ...options.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers, credentials: 'include' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || data.message || res.statusText);
   return data;

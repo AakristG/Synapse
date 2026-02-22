@@ -193,33 +193,39 @@ def audio_extract(request):
     Accept multipart form: 'audio' file, optional 'previous_context' (text from prior turn).
     Gemini runs clinical intake: asks for name/age/report if missing, extracts vitals/symptoms/diagnosis, returns document.
     """
-    audio_file = request.FILES.get('audio')
-    if not audio_file:
+    try:
+        audio_file = request.FILES.get('audio')
+        if not audio_file:
+            return Response(
+                {'detail': 'Missing "audio" file.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        audio_bytes = audio_file.read()
+        mime = audio_file.content_type or 'audio/webm'
+        if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
+            mime = 'audio/webm'
+        previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
+        result = intake_from_audio(audio_bytes, mime_type=mime, previous_context=previous_context)
+        if result.get('error') and not result.get('transcript') and not result.get('document'):
+            return Response(
+                {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'document', 'transcript']}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({
+            'missing': result.get('missing', []),
+            'question': result.get('question'),
+            'name': result.get('name', ''),
+            'age': result.get('age', ''),
+            'report': result.get('report', ''),
+            'vitals': result.get('vitals', {}),
+            'symptoms': result.get('symptoms', []),
+            'diagnosis': result.get('diagnosis', ''),
+            'document': result.get('document', ''),
+            'transcript': result.get('transcript', ''),
+            'error': result.get('error', ''),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
         return Response(
-            {'detail': 'Missing "audio" file.'},
-            status=status.HTTP_400_BAD_REQUEST,
+            {'detail': str(e), 'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    audio_bytes = audio_file.read()
-    mime = audio_file.content_type or 'audio/webm'
-    if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
-        mime = 'audio/webm'
-    previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
-    result = intake_from_audio(audio_bytes, mime_type=mime, previous_context=previous_context)
-    if result.get('error') and not result.get('transcript') and not result.get('document'):
-        return Response(
-            {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'document', 'transcript']}},
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
-    return Response({
-        'missing': result.get('missing', []),
-        'question': result.get('question'),
-        'name': result.get('name', ''),
-        'age': result.get('age', ''),
-        'report': result.get('report', ''),
-        'vitals': result.get('vitals', {}),
-        'symptoms': result.get('symptoms', []),
-        'diagnosis': result.get('diagnosis', ''),
-        'document': result.get('document', ''),
-        'transcript': result.get('transcript', ''),
-        'error': result.get('error', ''),
-    }, status=status.HTTP_200_OK)
