@@ -116,3 +116,71 @@ class EMRExport(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class TriageEncounter(models.Model):
+    """Emergency triage encounter with structured intake and acuity output."""
+    conversation = models.OneToOneField(
+        Conversation, on_delete=models.CASCADE, related_name='triage_encounter'
+    )
+    patient_name = models.CharField(max_length=255, blank=True)
+    patient_age = models.CharField(max_length=32, blank=True)
+    chief_complaint = models.TextField(blank=True)
+    onset_time = models.CharField(max_length=64, blank=True)
+    arrival_mode = models.CharField(
+        max_length=32,
+        choices=[
+            ('walk-in', 'Walk-in'),
+            ('ambulance', 'Ambulance'),
+            ('wheelchair', 'Wheelchair'),
+            ('police', 'Police'),
+            ('other', 'Other'),
+        ],
+        default='walk-in',
+    )
+    pain_score = models.PositiveSmallIntegerField(default=0)  # 0-10
+    gcs = models.PositiveSmallIntegerField(default=15)  # 3-15
+    vitals = models.JSONField(default=dict, blank=True)
+    symptoms = models.JSONField(default=list, blank=True)
+    allergies = models.JSONField(default=list, blank=True)
+    medications = models.JSONField(default=list, blank=True)
+    past_history = models.JSONField(default=list, blank=True)
+    pregnancy_status = models.CharField(max_length=64, blank=True)
+    red_flags = models.JSONField(default=dict, blank=True)
+    triage_level = models.CharField(max_length=16, default='ESI-5')
+    disposition = models.CharField(max_length=128, blank=True)
+    reassessment_due_at = models.DateTimeField(null=True, blank=True)
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    finalized_by = models.CharField(max_length=150, blank=True)
+    audit_log = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+
+class TriageEvent(models.Model):
+    """Timeline event history for triage changes and finalization."""
+    encounter = models.ForeignKey(
+        TriageEncounter, on_delete=models.CASCADE, related_name='events'
+    )
+    event_type = models.CharField(
+        max_length=32,
+        choices=[
+            ('arrival', 'Arrival'),
+            ('triage_started', 'Triage Started'),
+            ('triage_updated', 'Triage Updated'),
+            ('scored', 'Scored'),
+            ('reassessment', 'Reassessment'),
+            ('handoff', 'Handoff'),
+            ('finalized', 'Finalized'),
+        ],
+        default='triage_updated',
+    )
+    note = models.TextField(blank=True)
+    created_by = models.CharField(max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

@@ -314,14 +314,21 @@ export default function Consultation() {
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
-            <Clock size={14} />
-            {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </div>
-          <button
-            type="button"
-            onClick={() => { logout(); navigate('/login', { replace: true }) }}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
+              <Clock size={14} />
+              {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </div>
+            <Link
+              to="/triage"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-neutral-700 hover:bg-neutral-100 border border-neutral-200 transition-all"
+            >
+              <Activity size={18} />
+              ER Triage
+            </Link>
+            <button
+              type="button"
+              onClick={() => { logout(); navigate('/login', { replace: true }) }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-all"
           >
             <LogOut size={18} />

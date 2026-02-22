@@ -1,16 +1,27 @@
 import logging
+from datetime import timedelta
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.utils import timezone
 
-from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .models import (
+    Conversation,
+    Transcript,
+    ClinicalNote,
+    PatientSummary,
+    EMRExport,
+    TriageEncounter,
+    TriageEvent,
+)
 from .gemini_service import intake_from_audio, plan_for_diagnosis
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
     ClinicalNoteSerializer,
     PatientSummarySerializer,
+    TriageEncounterSerializer,
 )
 from .services import (
     generate_session_id,
@@ -332,4 +343,278 @@ def clinical_plan_for_diagnosis(request):
     return Response({
         'treatment_plan': plan,
         'patient_summary': summary,
+    }, status=status.HTTP_200_OK)
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _as_dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _score_triage(encounter):
+    red_flags = _as_dict(encounter.red_flags)
+    vitals = _as_dict(encounter.vitals)
+    reasons = []
+
+    if red_flags.get('airway_compromise'):
+        reasons.append('Airway compromise')
+    if red_flags.get('active_chest_pain'):
+        reasons.append('Active chest pain')
+    if red_flags.get('stroke_signs'):
+        reasons.append('Stroke signs')
+    if red_flags.get('sepsis_risk'):
+        reasons.append('Sepsis risk')
+
+    try:
+        hr = vitals.get('heart_rate')
+        spo2 = vitals.get('spo2')
+        sbp = vitals.get('systolic_bp')
+        rr = vitals.get('resp_rate')
+        if hr is not None and float(hr) > 130:
+            reasons.append('Heart rate > 130')
+        if spo2 is not None and float(spo2) < 90:
+            reasons.append('SpO2 < 90')
+        if sbp is not None and float(sbp) < 90:
+            reasons.append('Systolic BP < 90')
+        if rr is not None and float(rr) > 30:
+            reasons.append('Respiratory rate > 30')
+    except (TypeError, ValueError):
+        pass
+
+    if reasons:
+        level = 'ESI-1'
+    elif encounter.pain_score >= 8 or encounter.gcs < 14:
+        level = 'ESI-2'
+    elif encounter.pain_score >= 5 or len(_as_list(encounter.symptoms)) >= 3:
+        level = 'ESI-3'
+    elif encounter.chief_complaint.strip():
+        level = 'ESI-4'
+    else:
+        level = 'ESI-5'
+
+    return level, reasons
+
+
+def _triage_document_text(encounter):
+    symptoms = ', '.join(_as_list(encounter.symptoms)) or 'None documented'
+    return '\n'.join([
+        'Emergency Department Triage Note (Draft)',
+        f'Generated: {timezone.now().isoformat()}',
+        '',
+        'Patient',
+        f'Name: {encounter.patient_name or "Unknown"}',
+        f'Age: {encounter.patient_age or "Not stated"}',
+        f'Arrival mode: {encounter.arrival_mode}',
+        '',
+        'Subjective',
+        f'Chief complaint: {encounter.chief_complaint or "Not documented"}',
+        f'Onset: {encounter.onset_time or "Not documented"}',
+        f'Symptoms: {symptoms}',
+        '',
+        'Objective',
+        f'Vitals: {_as_dict(encounter.vitals)}',
+        f'Pain score: {encounter.pain_score}/10',
+        f'GCS: {encounter.gcs}',
+        f'Red flags: {_as_dict(encounter.red_flags)}',
+        '',
+        'Assessment',
+        f'Acuity level: {encounter.triage_level}',
+        '',
+        'Plan',
+        f'Disposition: {encounter.disposition or "Pending"}',
+        f'Reassessment due: {encounter.reassessment_due_at.isoformat() if encounter.reassessment_due_at else "Not set"}',
+        '',
+        'Compliance',
+        'AI-assisted draft requires clinician review and signature before final chart use.',
+    ])
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def triage_encounter_list_create(request):
+    if request.method == 'GET':
+        encounters = TriageEncounter.objects.select_related('conversation').all()[:100]
+        return Response(TriageEncounterSerializer(encounters, many=True).data)
+
+    data = request.data or {}
+    reassessment_minutes = data.get('reassessment_minutes', 15)
+    try:
+        reassessment_minutes = max(5, int(reassessment_minutes))
+    except (TypeError, ValueError):
+        reassessment_minutes = 15
+
+    conv = Conversation.objects.create(
+        session_id=data.get('session_id') or generate_session_id(),
+        source='triage',
+        language=data.get('language', 'en'),
+        metadata={'workflow': 'er-triage', **_as_dict(data.get('metadata'))},
+    )
+    encounter = TriageEncounter.objects.create(
+        conversation=conv,
+        patient_name=(data.get('patient_name') or '').strip(),
+        patient_age=(data.get('patient_age') or '').strip(),
+        chief_complaint=(data.get('chief_complaint') or '').strip(),
+        onset_time=(data.get('onset_time') or '').strip(),
+        arrival_mode=data.get('arrival_mode') or 'walk-in',
+        pain_score=max(0, min(10, int(data.get('pain_score') or 0))),
+        gcs=max(3, min(15, int(data.get('gcs') or 15))),
+        vitals=_as_dict(data.get('vitals')),
+        symptoms=_as_list(data.get('symptoms')),
+        allergies=_as_list(data.get('allergies')),
+        medications=_as_list(data.get('medications')),
+        past_history=_as_list(data.get('past_history')),
+        pregnancy_status=(data.get('pregnancy_status') or '').strip(),
+        red_flags=_as_dict(data.get('red_flags')),
+        reassessment_due_at=timezone.now() + timedelta(minutes=reassessment_minutes),
+    )
+    TriageEvent.objects.create(
+        encounter=encounter,
+        event_type='arrival',
+        note='Triage encounter created',
+        created_by=getattr(request.user, 'username', '') or '',
+    )
+    return Response(TriageEncounterSerializer(encounter).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def triage_encounter_detail(request, pk):
+    try:
+        encounter = TriageEncounter.objects.get(pk=pk)
+    except TriageEncounter.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        return Response(TriageEncounterSerializer(encounter).data)
+
+    if encounter.finalized_at:
+        return Response({'detail': 'Encounter is finalized and read-only.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = request.data or {}
+    changed = []
+
+    for field in ['patient_name', 'patient_age', 'chief_complaint', 'onset_time', 'arrival_mode', 'pregnancy_status', 'disposition']:
+        if field in data:
+            setattr(encounter, field, str(data.get(field) or '').strip())
+            changed.append(field)
+
+    for field in ['symptoms', 'allergies', 'medications', 'past_history']:
+        if field in data:
+            setattr(encounter, field, _as_list(data.get(field)))
+            changed.append(field)
+
+    for field in ['vitals', 'red_flags']:
+        if field in data:
+            setattr(encounter, field, _as_dict(data.get(field)))
+            changed.append(field)
+
+    if 'pain_score' in data:
+        try:
+            encounter.pain_score = max(0, min(10, int(data.get('pain_score'))))
+            changed.append('pain_score')
+        except (TypeError, ValueError):
+            pass
+
+    if 'gcs' in data:
+        try:
+            encounter.gcs = max(3, min(15, int(data.get('gcs'))))
+            changed.append('gcs')
+        except (TypeError, ValueError):
+            pass
+
+    if 'reassessment_minutes' in data:
+        try:
+            minutes = max(5, int(data.get('reassessment_minutes')))
+            encounter.reassessment_due_at = timezone.now() + timedelta(minutes=minutes)
+            changed.append('reassessment_due_at')
+        except (TypeError, ValueError):
+            pass
+
+    if changed:
+        audit = _as_list(encounter.audit_log)
+        audit.append({
+            'at': timezone.now().isoformat(),
+            'by': getattr(request.user, 'username', '') or '',
+            'fields': changed,
+        })
+        encounter.audit_log = audit[-200:]
+        encounter.save()
+        TriageEvent.objects.create(
+            encounter=encounter,
+            event_type='triage_updated',
+            note=f"Updated fields: {', '.join(sorted(set(changed)))}",
+            created_by=getattr(request.user, 'username', '') or '',
+        )
+
+    return Response(TriageEncounterSerializer(encounter).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def triage_score(request, pk):
+    try:
+        encounter = TriageEncounter.objects.get(pk=pk)
+    except TriageEncounter.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    level, reasons = _score_triage(encounter)
+    encounter.triage_level = level
+    encounter.save(update_fields=['triage_level', 'updated_at'])
+    TriageEvent.objects.create(
+        encounter=encounter,
+        event_type='scored',
+        note=f'Scored {level}',
+        created_by=getattr(request.user, 'username', '') or '',
+    )
+    return Response({
+        'triage_level': level,
+        'reasons': reasons,
+        'encounter': TriageEncounterSerializer(encounter).data,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def triage_finalize(request, pk):
+    try:
+        encounter = TriageEncounter.objects.get(pk=pk)
+    except TriageEncounter.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    missing = []
+    if not encounter.patient_name.strip():
+        missing.append('patient_name')
+    if not encounter.chief_complaint.strip():
+        missing.append('chief_complaint')
+    if missing:
+        return Response({'detail': 'Missing required fields.', 'missing': missing}, status=status.HTTP_400_BAD_REQUEST)
+
+    encounter.finalized_at = timezone.now()
+    encounter.finalized_by = getattr(request.user, 'username', '') or ''
+    encounter.save(update_fields=['finalized_at', 'finalized_by', 'updated_at'])
+    TriageEvent.objects.create(
+        encounter=encounter,
+        event_type='finalized',
+        note='Triage finalized',
+        created_by=encounter.finalized_by,
+    )
+    return Response(TriageEncounterSerializer(encounter).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def triage_document(request, pk):
+    try:
+        encounter = TriageEncounter.objects.get(pk=pk)
+    except TriageEncounter.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response({
+        'encounter': TriageEncounterSerializer(encounter).data,
+        'document_text': _triage_document_text(encounter),
+        'generated_at': timezone.now().isoformat(),
+        'compliance_note': 'Draft requires clinician review and signature before final chart use.',
     }, status=status.HTTP_200_OK)

@@ -1,5 +1,13 @@
 from rest_framework import serializers
-from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .models import (
+    Conversation,
+    Transcript,
+    ClinicalNote,
+    PatientSummary,
+    EMRExport,
+    TriageEncounter,
+    TriageEvent,
+)
 
 
 class TranscriptSerializer(serializers.ModelSerializer):
@@ -44,3 +52,45 @@ class EMRExportSerializer(serializers.ModelSerializer):
     class Meta:
         model = EMRExport
         fields = ['id', 'conversation_id', 'external_system', 'status', 'created_at']
+
+
+class TriageEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TriageEvent
+        fields = ['id', 'event_type', 'note', 'created_by', 'created_at']
+
+
+class TriageEncounterSerializer(serializers.ModelSerializer):
+    events = TriageEventSerializer(many=True, read_only=True)
+    conversation_id = serializers.IntegerField(source='conversation.id', read_only=True)
+
+    class Meta:
+        model = TriageEncounter
+        fields = [
+            'id',
+            'conversation_id',
+            'patient_name',
+            'patient_age',
+            'chief_complaint',
+            'onset_time',
+            'arrival_mode',
+            'pain_score',
+            'gcs',
+            'vitals',
+            'symptoms',
+            'allergies',
+            'medications',
+            'past_history',
+            'pregnancy_status',
+            'red_flags',
+            'triage_level',
+            'disposition',
+            'reassessment_due_at',
+            'finalized_at',
+            'finalized_by',
+            'audit_log',
+            'created_at',
+            'updated_at',
+            'events',
+        ]
+        read_only_fields = ['audit_log', 'finalized_at', 'finalized_by', 'created_at', 'updated_at']
