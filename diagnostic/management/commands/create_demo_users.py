@@ -4,7 +4,7 @@ from diagnostic.models import UserProfile
 
 
 class Command(BaseCommand):
-    help = "Create demo users: patient (patient/patient123), physician (physician/physician123), nurse (nurse/nurse123), emt (emt/emt123), Richard Smith (Richard Smith/Richard@123)."
+    help = "Create demo users: patients Amira Godar, John Doe, Greg Yoas; physician Richard Smith; and patient/physician/nurse/emt demos."
 
     def handle(self, *args, **options):
         for username, password, role in [
@@ -13,14 +13,23 @@ class Command(BaseCommand):
             ("nurse", "nurse123", "nurse"),
             ("emt", "emt123", "emt"),
             ("Richard Smith", "Richard@123", "physician"),
+            ("Amira Godar", "Amira@123", "patient"),
+            ("John Doe", "John@123", "patient"),
+            ("Greg Yoas", "Greg@123", "patient"),
         ]:
             user, created = User.objects.get_or_create(
                 username=username,
-                defaults={"email": f"{username}@demo.local"},
+                defaults={"email": f"{username.replace(' ', '_')}@demo.local"},
             )
             if created:
                 user.set_password(password)
                 user.save()
                 self.stdout.write(f"Created user: {username}")
-            UserProfile.objects.get_or_create(user=user, defaults={"role": role})
-        self.stdout.write(self.style.SUCCESS("Demo users ready. Log in as patient (patient/patient123), physician (physician/physician123), nurse/nurse123, emt/emt123, or Richard Smith (Richard Smith/Richard@123)."))
+            profile, created_profile = UserProfile.objects.get_or_create(user=user, defaults={"role": role})
+            if not created_profile and profile.role != role:
+                profile.role = role
+                profile.save()
+        self.stdout.write(self.style.SUCCESS(
+            "Demo users ready. Patients: Amira Godar (Amira@123), John Doe (John@123), Greg Yoas (Greg@123) -> patient dashboard. "
+            "Physicians: physician/physician123, Richard Smith/Richard@123."
+        ))

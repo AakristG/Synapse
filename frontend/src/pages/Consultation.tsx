@@ -507,6 +507,7 @@ export default function Consultation() {
                 Patient Information
               </a>
             </div>
+            {/* ER Triage — commented out
             <Link
               to="/triage"
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-neutral-700 hover:bg-neutral-100 border border-neutral-200 transition-all"
@@ -514,6 +515,7 @@ export default function Consultation() {
               <Activity size={18} />
               ER Triage
             </Link>
+            */}
             <button
               type="button"
               onClick={() => { logout(); navigate('/login', { replace: true }) }}

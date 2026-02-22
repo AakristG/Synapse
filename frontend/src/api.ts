@@ -119,16 +119,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ diagnosis, symptoms, document }),
     }),
-  listTriageEncounters: () => request('/triage/encounters/'),
-  createTriageEncounter: (body: Record<string, unknown>) =>
-    request('/triage/encounters/', { method: 'POST', body: JSON.stringify(body) }),
-  getTriageEncounter: (id: string) => request(`/triage/encounters/${id}/`),
-  updateTriageEncounter: (id: string, body: Record<string, unknown>) =>
-    request(`/triage/encounters/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
-  scoreTriageEncounter: (id: string) =>
-    request(`/triage/encounters/${id}/score/`, { method: 'POST' }),
-  finalizeTriageEncounter: (id: string) =>
-    request(`/triage/encounters/${id}/finalize/`, { method: 'POST' }),
-  triageDocument: (id: string) =>
-    request(`/triage/encounters/${id}/document/`),
+  // ER Triage — commented out
+  // listTriageEncounters: () => request('/triage/encounters/'),
+  // createTriageEncounter: (body: Record<string, unknown>) =>
+  //   request('/triage/encounters/', { method: 'POST', body: JSON.stringify(body) }),
+  // getTriageEncounter: (id: string) => request(`/triage/encounters/${id}/`),
+  // updateTriageEncounter: (id: string, body: Record<string, unknown>) =>
+  //   request(`/triage/encounters/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // scoreTriageEncounter: (id: string) =>
+  //   request(`/triage/encounters/${id}/score/`, { method: 'POST' }),
+  // finalizeTriageEncounter: (id: string) =>
+  //   request(`/triage/encounters/${id}/finalize/`, { method: 'POST' }),
+  // triageDocument: (id: string) =>
+  //   request(`/triage/encounters/${id}/document/`),
 }
