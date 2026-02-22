@@ -8,7 +8,7 @@ import './App.css'
 const Login = lazy(() => import('./pages/Login.tsx'))
 const PatientPortal = lazy(() => import('./pages/PatientPortal.tsx'))
 const Consultation = lazy(() => import('./pages/Consultation.tsx'))
-const Triage = lazy(() => import('./pages/Triage.tsx'))
+// const Triage = lazy(() => import('./pages/Triage.tsx'))
 const PatientDetail = lazy(() => import('./pages/PatientDetail.tsx'))
 const AllPatients = lazy(() => import('./pages/AllPatients.tsx'))
 
@@ -34,7 +34,9 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/patient-portal" element={<ProtectedRoute><PatientPortal /></ProtectedRoute>} />
             <Route path="/consultation" element={<ProtectedRoute><Consultation /></ProtectedRoute>} />
+            {/* ER Triage — commented out
             <Route path="/triage" element={<ProtectedRoute><Triage /></ProtectedRoute>} />
+            */}
             <Route path="/patients" element={<ProtectedRoute><AllPatients /></ProtectedRoute>} />
             <Route path="/patient/:id" element={<ProtectedRoute><PatientDetail /></ProtectedRoute>} />
           </Routes>

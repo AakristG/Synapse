@@ -42,7 +42,9 @@ export default function ConversationList() {
           <select value={source} onChange={(e) => setSource(e.target.value)}>
             <option value="consultation">Consultation</option>
             <option value="telehealth">Telehealth</option>
+            {/* ER Triage — commented out
             <option value="triage">Emergency Triage</option>
+            */}
             <option value="other">Other</option>
           </select>
           <button onClick={createNew} disabled={creating}>
