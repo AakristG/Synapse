@@ -37,6 +37,8 @@ export default function Consultation() {
   const transcriptEndRef = useRef(null)
   const mediaRecorderRef = useRef(null)
   const chunksRef = useRef([])
+  const speechRecognitionRef = useRef(null)
+  const speechTranscriptRef = useRef('')
 
   const applyExtractionResult = useCallback((result) => {
     // Show conversation: (1) what you said — transcript, (2) AI response — structured summary
@@ -72,6 +74,31 @@ export default function Consultation() {
   const startSession = useCallback(() => {
     resetSession()
     chunksRef.current = []
+    speechTranscriptRef.current = ''
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = 'en-US'
+        recognition.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              const t = e.results[i][0].transcript
+              if (t) speechTranscriptRef.current = (speechTranscriptRef.current + ' ' + t).trim()
+            }
+          }
+        }
+        recognition.onerror = () => {}
+        recognition.start()
+        speechRecognitionRef.current = recognition
+      } catch {
+        speechRecognitionRef.current = null
+      }
+    } else {
+      speechRecognitionRef.current = null
+    }
     navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((stream) => {
@@ -92,21 +119,33 @@ export default function Consultation() {
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current || !isRecording) return
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop()
+      } catch {}
+      speechRecognitionRef.current = null
+    }
     mediaRecorderRef.current.stop()
     setIsRecording(false)
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+    const liveTranscript = (speechTranscriptRef.current || '').trim()
     setIsProcessing(true)
-    toast.info('Creating transcript from your recording...')
-    api
-      .extractAudio(blob)
-      .then((data) => {
-        applyExtractionResult(data)
-        toast.success('Recording transcribed and analyzed.')
-      })
-      .catch((err) => {
-        toast.error(err.message || 'Transcription failed.')
-      })
-      .finally(() => setIsProcessing(false))
+    toast.info(liveTranscript ? 'Sending your words to Synapse...' : 'Creating transcript from your recording...')
+    // Brief delay so browser speech recognition can flush final results
+    const send = () => {
+      api
+        .extractAudio(blob, '', liveTranscript)
+        .then((data) => {
+          applyExtractionResult(data)
+          toast.success('Recording transcribed and analyzed.')
+        })
+        .catch((err) => {
+          toast.error(err.message || 'Transcription failed.')
+        })
+        .finally(() => setIsProcessing(false))
+    }
+    if (liveTranscript) setTimeout(send, 300)
+    else send()
   }, [isRecording, applyExtractionResult])
 
   const handleFileUpload = useCallback(

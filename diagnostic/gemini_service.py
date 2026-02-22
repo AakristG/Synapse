@@ -131,13 +131,21 @@ Transcript to evaluate:
         return _empty_result("Gemini response was not valid JSON")
 
 
-def intake_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm", previous_context: str = "") -> dict:
+def intake_from_audio(
+    audio_bytes: bytes,
+    mime_type: str = "audio/webm",
+    previous_context: str = "",
+    client_transcript: str = "",
+) -> dict:
     """
-    Two-step flow: (1) Transcribe audio to exact words, (2) Gemini evaluates that transcript only.
-    Transcript = exactly what you said; document/symptoms/diagnosis = Gemini's evaluation of that text.
+    Two-step flow: (1) Transcript = client_transcript if provided, else Gemini transcribes audio.
+    (2) Gemini evaluates that transcript only. So "Clinician" = exactly what the user said.
     """
-    # Step 1: Get verbatim transcript (exactly what was said)
-    transcript = transcribe_audio(audio_bytes, mime_type=mime_type)
+    # Step 1: Use client-provided transcript (e.g. from browser speech recognition) or transcribe audio
+    if client_transcript and client_transcript.strip():
+        transcript = client_transcript.strip()
+    else:
+        transcript = transcribe_audio(audio_bytes, mime_type=mime_type)
     if not transcript and not previous_context:
         return _empty_result("Could not transcribe audio")
 
