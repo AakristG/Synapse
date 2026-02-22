@@ -73,10 +73,14 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple
     return "", "No model available"
 
 
-def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
+def intake_from_text(
+    transcript_text: str,
+    previous_context: str = "",
+    patients_context: str = "",
+) -> dict:
     """
     Step 2: Gemini evaluates the transcript (text only). Extracts structure and builds clinical document.
-    The transcript is exactly what was said; this call only interprets it.
+    If patients_context is provided, the model can also answer questions about specific patients.
     """
     client, types, err = _get_client()
     if err:
@@ -86,6 +90,14 @@ def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
         return _empty_result("No transcript to evaluate")
 
     context_line = f'\nPrevious context (if continuing):\n{previous_context}\n' if previous_context else ""
+    patients_block = ""
+    if patients_context and patients_context.strip():
+        patients_block = f"""
+RECORDED PATIENTS (use this to answer when the physician asks about a specific patient's diagnosis, treatment, symptoms, or any recorded data):
+{patients_context.strip()}
+
+If the physician's message is a question about a patient (e.g. "What is the diagnosis for John?", "Tell me about patient #123", "What's Maria's treatment plan?"), use the RECORDED PATIENTS data above to answer. Put your answer in the "document" field as a clear, short paragraph (e.g. "Patient John Doe (ID #123): Diagnosis is hypertension. Treatment plan includes..."). Set "question" to null and "missing" to [] in that case. If the message is not about looking up a patient, proceed with normal extraction.
+"""
 
     prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript. It may contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
 
@@ -111,7 +123,7 @@ Extract only when clearly stated or clearly intended in the transcript:
 - treatment_plan: REQUIRED. You MUST always return a non-empty array of 4 to 12 concrete steps. Never return an empty array. Base steps on the clinical document (Synapse-style summary) and the primary diagnosis. Each step is one short, actionable sentence (e.g. "Start lisinopril 10 mg PO daily for BP", "Order HbA1c and BMP", "Follow up in 2 weeks", "Patient to monitor blood pressure at home"). Order logically: immediate interventions and medications first, then labs/imaging, then follow-up and patient instructions. If the transcript is minimal, still provide at least 4 reasonable steps (e.g. "Follow up in 2 weeks", "Return if symptoms worsen", "Continue current medications as prescribed", "Patient to monitor symptoms"). Use standard medical terminology and correct spelling.
 
 Document: one short paragraph with ONLY information from the transcript, properly spelled and in clear clinical language. Use "Not stated" for any category not mentioned.
-""" + context_line + """
+""" + patients_block + context_line + """
 Transcript to evaluate:
 """
     full_prompt = prompt + "\n" + (transcript_text or "").strip() + "\n\nReturn ONLY a valid JSON object with exactly these keys (no markdown, no code fence): \"missing\": [], \"question\": null, \"name\": string, \"age\": string, \"report\": string, \"vitals\": object, \"symptoms\": array of strings, \"diagnosis\": string, \"possible_diagnoses\": array of strings, \"treatment_plan\": array of strings (REQUIRED: must have at least 4 items), \"document\": string. Return only the JSON."
@@ -168,7 +180,7 @@ Transcript to evaluate:
             missing.append("symptoms")
         question = (data.get("question") or "").strip()
         if missing and not question:
-            question = "Please state the patient's name, age, and presenting symptoms to continue."
+            question = "Ask me anything or please state the patient's name, age, and presenting symptoms to continue."
         if not missing:
             question = None
         return {

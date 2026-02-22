@@ -19,6 +19,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 const TOKEN_KEY = 'token'
+const REFRESH_KEY = 'refreshToken'
 const USER_KEY = 'user'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTokenState(t)
     } else {
       localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(REFRESH_KEY)
       localStorage.removeItem(USER_KEY)
       setTokenState('')
       setUser(null)
@@ -46,8 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (username: string, password: string): Promise<User> => {
-    const data = await api.login(username, password) as { access: string; user: User }
+    const data = await api.login(username, password) as { access: string; refresh?: string; user: User }
     setToken(data.access)
+    if (data.refresh) localStorage.setItem(REFRESH_KEY, data.refresh)
     setUser(data.user)
     localStorage.setItem(USER_KEY, JSON.stringify(data.user))
     return data.user

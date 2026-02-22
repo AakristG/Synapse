@@ -15,7 +15,7 @@ from .models import (
     TriageEncounter,
     TriageEvent,
 )
-from .gemini_service import intake_from_audio, plan_for_diagnosis
+from .gemini_service import intake_from_audio, intake_from_text, plan_for_diagnosis
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -300,6 +300,58 @@ def audio_extract(request):
             'treatment_plan': result.get('treatment_plan', []),
             'document': result.get('document', ''),
             'transcript': result.get('transcript', ''),
+            'error': result.get('error', ''),
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response(
+            {'detail': str(e), 'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def intake_from_text_api(request):
+    """
+    POST JSON: { "transcript": "...", "previous_context": "...", "patients_context": "..." (optional) }.
+    patients_context: summary of recorded patients (e.g. JSON) so the AI can answer questions about them.
+    Same response shape as audio/extract/ so the frontend can append to the conversation.
+    """
+    try:
+        data = request.data or {}
+        transcript_text = (data.get('transcript') or '').strip()
+        if not transcript_text:
+            return Response(
+                {'detail': 'Missing or empty "transcript".'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        previous_context = (data.get('previous_context') or '').strip()
+        patients_context = (data.get('patients_context') or '').strip()
+        result = intake_from_text(
+            transcript_text,
+            previous_context=previous_context,
+            patients_context=patients_context,
+        )
+        if result.get('error') and not result.get('transcript') and not result.get('document'):
+            err_msg = result.get('error', 'Unknown error')
+            logging.getLogger(__name__).warning('intake_from_text 502: %s', err_msg)
+            return Response(
+                {'detail': err_msg, **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'possible_diagnoses', 'treatment_plan', 'document', 'transcript']}},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({
+            'missing': result.get('missing', []),
+            'question': result.get('question'),
+            'name': result.get('name', ''),
+            'age': result.get('age', ''),
+            'report': result.get('report', ''),
+            'vitals': result.get('vitals', {}),
+            'symptoms': result.get('symptoms', []),
+            'diagnosis': result.get('diagnosis', ''),
+            'possible_diagnoses': result.get('possible_diagnoses', []),
+            'treatment_plan': result.get('treatment_plan', []),
+            'document': result.get('document', ''),
+            'transcript': transcript_text,
             'error': result.get('error', ''),
         }, status=status.HTTP_200_OK)
     except Exception as e:

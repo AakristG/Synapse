@@ -1,7 +1,8 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Download, Stethoscope, Trash2, FileText, Maximize2, X } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { ArrowLeft, Download, Stethoscope, Trash2, FileText, Maximize2, X, Pencil, Send, Loader2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
+import { api, formatPatientsContext } from '../api'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 
@@ -38,6 +39,16 @@ function loadPatients(): StoredPatient[] {
 /** Remove a patient from storage. Call after confirming delete. */
 export function deletePatient(id: string): void {
   const next = loadPatients().filter((p) => p.id !== id)
+  localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+}
+
+/** Update a patient in storage (merge/replace by id). */
+function updatePatient(updated: StoredPatient): void {
+  const list = loadPatients()
+  const idx = list.findIndex((p) => p.id === updated.id)
+  if (idx === -1) return
+  const next = [...list]
+  next[idx] = updated
   localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
 }
 
@@ -243,10 +254,16 @@ export default function PatientDetail() {
   const navigate = useNavigate()
   const [medicalPdfUrl, setMedicalPdfUrl] = useState<string | null>(null)
   const [pdfExpanded, setPdfExpanded] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editMessage, setEditMessage] = useState('')
+  const [isSendingEdit, setIsSendingEdit] = useState(false)
+  const [newDiagnosis, setNewDiagnosis] = useState('')
+  const [newTreatmentStep, setNewTreatmentStep] = useState('')
   const patient = useMemo(() => {
     const list = loadPatients()
     return list.find((p) => p.id === id) || null
-  }, [id])
+  }, [id, refreshKey])
 
   useEffect(() => {
     if (!patient) return
@@ -289,6 +306,46 @@ export default function PatientDetail() {
     window.open(medicalPdfUrl, '_blank', 'noopener,noreferrer')
   }
 
+  const handleSendEdit = useCallback(() => {
+    if (!patient || !editMessage.trim() || isSendingEdit) return
+    const previousContext = transcriptLines
+      .map((l) => `${l.speaker}: ${l.text}`)
+      .join('\n\n')
+      .trim()
+    const patientsContext = formatPatientsContext(loadPatients())
+    setIsSendingEdit(true)
+    api
+      .sendTextToSynapse(editMessage.trim(), previousContext, patientsContext)
+      .then((data: Record<string, unknown>) => {
+        const synapseReply =
+          (data.question != null && String(data.question).trim()) ||
+          (data.document != null && String(data.document).trim()) ||
+          'Updated.'
+        const newLines: TranscriptLine[] = [
+          { speaker: 'Clinician', text: editMessage.trim() },
+          { speaker: 'Synapse', text: String(synapseReply) },
+        ]
+        const updated: StoredPatient = {
+          ...patient,
+          name: (data.name != null && String(data.name).trim()) ? String(data.name).trim() : String(patient.name ?? ''),
+          age: (data.age != null && String(data.age).trim()) ? String(data.age).trim() : String(patient.age ?? ''),
+          symptoms: Array.isArray(data.symptoms) ? (data.symptoms as string[]) : (patient.symptoms ?? []),
+          diagnosis: (data.diagnosis != null && String(data.diagnosis).trim()) ? String(data.diagnosis).trim() : (patient.diagnosis ?? ''),
+          possible_diagnoses: Array.isArray(data.possible_diagnoses) ? (data.possible_diagnoses as string[]) : (patient.possible_diagnoses ?? []),
+          treatment_plan: Array.isArray(data.treatment_plan) ? (data.treatment_plan as string[]) : (patient.treatment_plan ?? []),
+          document: (data.document != null && String(data.document).trim()) ? String(data.document).trim() : (patient.document ?? ''),
+          transcriptRecording: [...transcriptLines, ...newLines],
+        }
+        updatePatient(updated)
+        setRefreshKey((k) => k + 1)
+        setEditMessage('')
+        setShowEditModal(false)
+        toast.success('Patient data updated by Synapse.')
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Could not update.'))
+      .finally(() => setIsSendingEdit(false))
+  }, [patient, editMessage, isSendingEdit, transcriptLines])
+
   const handleDelete = () => {
     if (!patient || !id) return
     if (!window.confirm(`Delete patient ${patient.name} (ID ${id})? This cannot be undone.`)) return
@@ -296,6 +353,46 @@ export default function PatientDetail() {
     toast.success('Patient removed.')
     navigate('/patients', { replace: true })
   }
+
+  const removeDiagnosis = useCallback(
+    (index: number) => {
+      if (!patient) return
+      const next = possibleDiagnoses.filter((_, i) => i !== index)
+      updatePatient({ ...patient, possible_diagnoses: next })
+      setRefreshKey((k) => k + 1)
+      toast.success('Diagnosis removed.')
+    },
+    [patient, possibleDiagnoses],
+  )
+
+  const addDiagnosis = useCallback(() => {
+    if (!patient || !newDiagnosis.trim()) return
+    const next = [...possibleDiagnoses, newDiagnosis.trim()]
+    updatePatient({ ...patient, possible_diagnoses: next })
+    setRefreshKey((k) => k + 1)
+    setNewDiagnosis('')
+    toast.success('Diagnosis added.')
+  }, [patient, possibleDiagnoses, newDiagnosis])
+
+  const removeTreatment = useCallback(
+    (index: number) => {
+      if (!patient) return
+      const next = treatmentPlan.filter((_, i) => i !== index)
+      updatePatient({ ...patient, treatment_plan: next })
+      setRefreshKey((k) => k + 1)
+      toast.success('Treatment step removed.')
+    },
+    [patient, treatmentPlan],
+  )
+
+  const addTreatment = useCallback(() => {
+    if (!patient || !newTreatmentStep.trim()) return
+    const next = [...treatmentPlan, newTreatmentStep.trim()]
+    updatePatient({ ...patient, treatment_plan: next })
+    setRefreshKey((k) => k + 1)
+    setNewTreatmentStep('')
+    toast.success('Treatment step added.')
+  }, [patient, treatmentPlan, newTreatmentStep])
 
   if (!patient) {
     return (
@@ -357,8 +454,17 @@ export default function PatientDetail() {
         {/* Row 1: Consultation recording and Clinical document side by side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
-            <div className="pb-3 border-b border-neutral-100">
+            <div className="pb-3 border-b border-neutral-100 flex items-center justify-between">
               <h2 className="text-sm font-bold text-neutral-800">Consultation Recording</h2>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 print:hidden"
+                title="Ask Synapse AI to update this patient's data"
+              >
+                <Pencil size={16} />
+                Edit
+              </button>
             </div>
             <div className="pt-4 max-h-[520px] overflow-auto space-y-3">
               {transcriptLines.length > 0 ? (
@@ -429,16 +535,46 @@ export default function PatientDetail() {
             <div className="pb-3 border-b border-neutral-100">
               <h2 className="text-sm font-bold text-neutral-800">Diagnosis</h2>
             </div>
-            <div className="pt-4">
+            <div className="pt-4 space-y-2">
               {possibleDiagnoses.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1.5 text-sm text-neutral-700">
+                <ul className="space-y-2 text-sm text-neutral-700 list-disc list-inside">
                   {possibleDiagnoses.map((d, i) => (
-                    <li key={i}>{d}</li>
+                    <li key={i} className="flex items-center gap-2 group">
+                      <span className="flex-1 min-w-0">{d}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDiagnosis(i)}
+                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 print:hidden"
+                        title="Remove this diagnosis"
+                        aria-label="Remove diagnosis"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </li>
                   ))}
                 </ul>
               ) : (
                 <p className="text-sm text-neutral-500">No diagnosis recorded.</p>
               )}
+              <div className="flex gap-2 pt-2 print:hidden">
+                <input
+                  type="text"
+                  value={newDiagnosis}
+                  onChange={(e) => setNewDiagnosis(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDiagnosis())}
+                  placeholder="Add diagnosis..."
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                />
+                <button
+                  type="button"
+                  onClick={addDiagnosis}
+                  disabled={!newDiagnosis.trim()}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  <Plus size={16} />
+                  Add
+                </button>
+              </div>
             </div>
           </div>
 
@@ -446,19 +582,107 @@ export default function PatientDetail() {
             <div className="pb-3 border-b border-neutral-100">
               <h2 className="text-sm font-bold text-neutral-800">Treatment & Plan</h2>
             </div>
-            <div className="pt-4">
+            <div className="pt-4 space-y-2">
               {treatmentPlan.length > 0 ? (
-                <ol className="list-decimal list-inside space-y-2 text-sm text-neutral-700">
+                <ol className="space-y-2 text-sm text-neutral-700 list-decimal list-inside">
                   {treatmentPlan.map((item, i) => (
-                    <li key={i}>{item}</li>
+                    <li key={i} className="flex items-start gap-2 group">
+                      <span className="flex-1 min-w-0">{item}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeTreatment(i)}
+                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 print:hidden mt-0.5"
+                        title="Remove this step"
+                        aria-label="Remove step"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </li>
                   ))}
                 </ol>
               ) : (
                 <p className="text-sm text-neutral-500">No treatment plan recorded.</p>
               )}
+              <div className="flex gap-2 pt-2 print:hidden">
+                <input
+                  type="text"
+                  value={newTreatmentStep}
+                  onChange={(e) => setNewTreatmentStep(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTreatment())}
+                  placeholder="Add treatment step..."
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                />
+                <button
+                  type="button"
+                  onClick={addTreatment}
+                  disabled={!newTreatmentStep.trim()}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  <Plus size={16} />
+                  Add
+                </button>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Edit: Ask Synapse to update data */}
+        {showEditModal && patient && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ask Synapse to update patient data"
+          >
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-neutral-800">Ask Synapse to update data</h3>
+                <button
+                  type="button"
+                  onClick={() => { if (!isSendingEdit) setShowEditModal(false) }}
+                  className="p-2 rounded-lg text-neutral-500 hover:bg-neutral-100"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-sm text-neutral-600 mb-3">
+                Describe the change you want (e.g. &quot;Add hypertension to diagnosis&quot;, &quot;Update age to 52&quot;). Synapse will update this patient&apos;s record.
+              </p>
+              <form
+                onSubmit={(e) => { e.preventDefault(); handleSendEdit() }}
+                className="flex flex-col gap-3"
+              >
+                <textarea
+                  value={editMessage}
+                  onChange={(e) => setEditMessage(e.target.value)}
+                  placeholder="e.g. Add chest pain to symptoms, or update treatment plan..."
+                  disabled={isSendingEdit}
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50 resize-y"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditModal(false)}
+                    disabled={isSendingEdit}
+                    className="px-4 py-2 rounded-xl border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!editMessage.trim() || isSendingEdit}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {isSendingEdit ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                    {isSendingEdit ? 'Updating...' : 'Send to Synapse'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Expanded PDF modal */}
         {pdfExpanded && medicalPdfUrl && (

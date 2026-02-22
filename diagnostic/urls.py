@@ -1,10 +1,13 @@
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
 from . import views, auth_views
 
 urlpatterns = [
     path('auth/login/', auth_views.login),
+    path('auth/refresh/', TokenRefreshView.as_view()),
     path('auth/me/', auth_views.me),
     path('audio/extract/', views.audio_extract),
+    path('intake-from-text/', views.intake_from_text_api),
     path('conversations/', views.conversation_list),
     path('conversations/<int:pk>/', views.conversation_detail),
     path('conversations/<int:pk>/transcripts/', views.add_transcript),

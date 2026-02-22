@@ -18,11 +18,12 @@ import {
   Plus,
   User,
   LogOut,
+  Send,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
-import { api } from '../api'
+import { api, formatPatientsContext } from '../api'
 import type { StoredPatient } from './PatientDetail'
 import axxessLogo from '../assets/axxess-logo.png'
 
@@ -51,7 +52,7 @@ interface ExtractionResult {
 }
 
 const INITIAL_AI_MESSAGE =
-  'Please state the patient\'s name, age, and presenting symptoms to begin documentation.'
+  'Ask me anything or please state the patient\'s name, age, and presenting symptoms to begin documentation.'
 
 function generatePatientId(): string {
   return String(Math.floor(1000000000 + Math.random() * 9000000000))
@@ -83,6 +84,8 @@ export default function Consultation() {
   const [patientSummaryForSelection, setPatientSummaryForSelection] = useState<string | null>(null)
   const [meds, setMeds] = useState<string[]>([])
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
+  const [typedMessage, setTypedMessage] = useState('')
+  const [isSendingText, setIsSendingText] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -305,6 +308,30 @@ export default function Consultation() {
     [transcript, applyExtractionResult],
   )
 
+  const sendTypedMessage = useCallback(() => {
+    const text = typedMessage.trim()
+    if (!text || isProcessing || isRecording || isUploading) return
+    const previousContext = transcript
+      .map((l) => `${l.speaker}: ${l.text}`)
+      .join('\n\n')
+      .trim()
+    setTypedMessage('')
+    setIsSendingText(true)
+    setIsProcessing(true)
+    const patientsContext = formatPatientsContext(patients)
+    api
+      .sendTextToSynapse(text, previousContext, patientsContext)
+      .then((data) => {
+        applyExtractionResult(data as ExtractionResult, {
+          append: true,
+          currentTranscript: transcript,
+        })
+        toast.success('Synapse replied.')
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Could not send message.'))
+      .finally(() => { setIsSendingText(false); setIsProcessing(false) })
+  }, [typedMessage, transcript, patients, isProcessing, isRecording, isUploading, applyExtractionResult])
+
   const resetSession = () => {
     setTranscript([{ speaker: 'Synapse', text: INITIAL_AI_MESSAGE }])
     setSymptoms([])
@@ -349,9 +376,6 @@ export default function Consultation() {
     <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900 phase-in">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
-            <img src={axxessLogo} alt="Axxess" className="w-full h-full object-contain" />
-          </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
           <div className="flex items-center gap-6">
@@ -431,75 +455,100 @@ export default function Consultation() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 flex flex-col overflow-auto px-6 py-4 space-y-4 bg-neutral-50/80 rounded-b-3xl">
-            <AnimatePresence initial={false}>
-              {transcript.length === 0 && !isRecording && !isUploading && !isProcessing && (
-                <div key="empty-state" className="flex-1 flex flex-col items-center justify-center text-neutral-400 space-y-4 opacity-50 min-h-[240px]">
-                  <div className="w-20 h-20 rounded-3xl bg-neutral-100 flex items-center justify-center border border-neutral-200">
-                    <FileAudio size={40} strokeWidth={1.5} />
+          <div className="flex-1 min-h-0 flex flex-col bg-neutral-50/80 rounded-b-3xl">
+            <div className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-4">
+              <AnimatePresence initial={false}>
+                {transcript.length === 0 && !isRecording && !isUploading && !isProcessing && (
+                  <div key="empty-state" className="flex-1 flex flex-col items-center justify-center text-neutral-400 space-y-4 opacity-50 min-h-[240px]">
+                    <div className="w-20 h-20 rounded-3xl bg-neutral-100 flex items-center justify-center border border-neutral-200">
+                      <FileAudio size={40} strokeWidth={1.5} />
+                    </div>
+                    <div className="text-center max-w-sm">
+                      <p className="font-bold text-neutral-700 text-lg italic">&quot;Waiting for clinical input...&quot;</p>
+                      <p className="text-sm mt-2 leading-relaxed">Start a recording or upload an audio file. When you stop or upload, we&apos;ll generate the transcript.</p>
+                    </div>
                   </div>
-                  <div className="text-center max-w-sm">
-                    <p className="font-bold text-neutral-700 text-lg italic">&quot;Waiting for clinical input...&quot;</p>
-                    <p className="text-sm mt-2 leading-relaxed">Start a recording or upload an audio file. When you stop or upload, we&apos;ll generate the transcript.</p>
+                )}
+                {isRecording && transcript.length === 0 && (
+                  <div key="recording" className="min-h-[200px] flex flex-col items-center justify-center py-8 text-neutral-500">
+                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4 animate-pulse">
+                      <Mic size={28} className="text-red-600" />
+                    </div>
+                    <p className="font-bold text-neutral-700">Recording in progress</p>
+                    <p className="text-xs mt-1">Click &quot;Stop & Transcribe&quot; when done to generate the transcript.</p>
                   </div>
-                </div>
-              )}
-              {isRecording && transcript.length === 0 && (
-                <div key="recording" className="min-h-[200px] flex flex-col items-center justify-center py-8 text-neutral-500">
-                  <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4 animate-pulse">
-                    <Mic size={28} className="text-red-600" />
+                )}
+                {(isUploading || isProcessing) && (
+                  <div key="processing" className="min-h-[200px] flex flex-col items-center justify-center py-8">
+                    <div className="relative">
+                      <Loader2 size={48} className="animate-spin text-red-200" />
+                      <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-pulse" />
+                    </div>
+                    <p className="mt-4 font-bold text-neutral-600 tracking-tight">
+                      {isSendingText ? 'Sending to Synapse...' : isProcessing ? 'Creating transcript from recording...' : 'Processing audio...'}
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-1 uppercase tracking-widest font-bold">Identifying speakers & entities</p>
                   </div>
-                  <p className="font-bold text-neutral-700">Recording in progress</p>
-                  <p className="text-xs mt-1">Click &quot;Stop & Transcribe&quot; when done to generate the transcript.</p>
-                </div>
-              )}
-              {(isUploading || isProcessing) && (
-                <div key="processing" className="min-h-[200px] flex flex-col items-center justify-center py-8">
-                  <div className="relative">
-                    <Loader2 size={48} className="animate-spin text-red-200" />
-                    <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-pulse" />
-                  </div>
-                  <p className="mt-4 font-bold text-neutral-600 tracking-tight">
-                    {isProcessing ? 'Creating transcript from recording...' : 'Processing audio...'}
-                  </p>
-                  <p className="text-xs text-neutral-400 mt-1 uppercase tracking-widest font-bold">Identifying speakers & entities</p>
-                </div>
-              )}
-              {!isUploading && !isProcessing &&
-                transcript.map((line, idx) => (
-                  <motion.div
-                    key={`t-${idx}`}
-                    initial={{ opacity: 0, x: line.speaker === 'Clinician' ? 20 : -20, y: 10 }}
-                    animate={{ opacity: 1, x: 0, y: 0 }}
-                    className={`flex flex-col ${line.speaker === 'Clinician' ? 'items-end' : 'items-start'}`}
-                  >
-                    <div
-                      className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
-                        line.speaker === 'Clinician' /* TODO: change Clinician to username */
-                          ? 'bg-red-600 text-white rounded-tr-none shadow-xl shadow-red-100/50'
-                          : line.speaker === 'Synapse AI'
-                            ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
-                            : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
-                      }`}
+                )}
+                {!isUploading && !isProcessing &&
+                  transcript.map((line, idx) => (
+                    <motion.div
+                      key={`t-${idx}`}
+                      initial={{ opacity: 0, x: line.speaker === 'Clinician' ? 20 : -20, y: 10 }}
+                      animate={{ opacity: 1, x: 0, y: 0 }}
+                      className={`flex flex-col ${line.speaker === 'Clinician' ? 'items-end' : 'items-start'}`}
                     >
                       <div
-                        className={`absolute top-0 ${line.speaker === 'Clinician' ? '-right-3' : '-left-3'} w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                          line.speaker === 'Clinician' ? 'bg-red-700 text-red-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
+                        className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
+                          line.speaker === 'Clinician' /* TODO: change Clinician to username */
+                            ? 'bg-red-600 text-white rounded-tr-none shadow-xl shadow-red-100/50'
+                            : line.speaker === 'Synapse AI'
+                              ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
+                              : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
                         }`}
                       >
-                        {line.speaker === 'Synapse' ? 'S' : line.speaker.charAt(0)}
+                        <div
+                          className={`absolute top-0 ${line.speaker === 'Clinician' ? '-right-3' : '-left-3'} w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-sm ${
+                            line.speaker === 'Clinician' ? 'bg-red-700 text-red-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
+                          }`}
+                        >
+                          {line.speaker === 'Synapse' ? 'S' : line.speaker.charAt(0)}
+                        </div>
+                        <p className="font-bold text-[10px] uppercase tracking-wider mb-2 opacity-80 flex items-center gap-2">
+                          {line.speaker}
+                          {line.speaker === 'Clinician' && <Zap size={10} fill="currentColor" />}
+                          {line.speaker === 'Synapse' && <Activity size={10} />}
+                        </p>
+                        <p className="font-medium whitespace-pre-wrap">{line.text}</p>
                       </div>
-                      <p className="font-bold text-[10px] uppercase tracking-wider mb-2 opacity-80 flex items-center gap-2">
-                        {line.speaker}
-                        {line.speaker === 'Clinician' && <Zap size={10} fill="currentColor" />}
-                        {line.speaker === 'Synapse' && <Activity size={10} />}
-                      </p>
-                      <p className="font-medium whitespace-pre-wrap">{line.text}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              <div ref={transcriptEndRef} className="h-4" />
-            </AnimatePresence>
+                    </motion.div>
+                  ))}
+                <div ref={transcriptEndRef} className="h-4" />
+              </AnimatePresence>
+            </div>
+            <div className="shrink-0 border-t border-neutral-200 bg-white px-4 py-3 rounded-b-3xl">
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => { e.preventDefault(); sendTypedMessage() }}
+              >
+                <input
+                  type="text"
+                  value={typedMessage}
+                  onChange={(e) => setTypedMessage(e.target.value)}
+                  placeholder="Type to Synapse AI..."
+                  disabled={isProcessing || isRecording || isUploading}
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={!typedMessage.trim() || isProcessing || isRecording || isUploading}
+                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-all"
+                >
+                  <Send size={18} />
+                  Send
+                </button>
+              </form>
+            </div>
           </div>
         </section>
 
