@@ -43,7 +43,7 @@ export default function Login() {
       </div>
       <div className="login-card">
         <h1>Diagnostic Assistant</h1>
-        <p className="login-subtitle">Sign in as Patient or Physician</p>
+        <p className="login-subtitle">Sign in as a Physician</p>
         <form onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
           <label>
