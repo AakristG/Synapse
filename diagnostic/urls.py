@@ -11,4 +11,5 @@ urlpatterns = [
     path('conversations/<int:pk>/transcribe/', views.transcribe),
     path('conversations/<int:pk>/summarize/', views.summarize),
     path('conversations/<int:pk>/export-emr/', views.export_emr),
+    path('clinical/plan-for-diagnosis/', views.clinical_plan_for_diagnosis),
 ]

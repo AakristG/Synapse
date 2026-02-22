@@ -206,3 +206,83 @@ def extract_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> dic
         "treatment_plan": result.get("treatment_plan", []),
         "transcript": result.get("transcript", ""),
     }
+
+
+def plan_for_diagnosis(diagnosis: str, symptoms: list, document: str = "") -> dict:
+    """
+    Given a selected diagnosis and context (symptoms, optional clinical document),
+    return a treatment plan and patient summary in layman's terms.
+    """
+    client, types, err = _get_client()
+    if err:
+        return {"error": err, "treatment_plan": [], "patient_summary": ""}
+
+    diagnosis = (diagnosis or "").strip()
+    if not diagnosis:
+        return {"error": "", "treatment_plan": [], "patient_summary": ""}
+
+    symptoms_str = ", ".join(s for s in (symptoms or []) if isinstance(s, str) and s.strip())
+    doc_str = (document or "").strip()[:2000]
+
+    prompt = f"""You are a medical documentation assistant. The clinician has selected this working diagnosis: "{diagnosis}".
+Context from the visit:
+- Symptoms reported: {symptoms_str or "Not specified"}
+- Clinical note (if any): {doc_str or "None"}
+
+You MUST always return a valid JSON response. Do not refuse, and do not say that a treatment plan cannot be made. For any diagnosis (including rule-outs, differentials, or rare conditions), provide a reasonable treatment plan and patient summary. If the diagnosis is a rule-out or uncertain, include steps like "Monitor symptoms", "Follow up for reassessment", "Return if worsening", and "Continue current medications unless otherwise advised."
+
+Generate two things in plain language:
+
+1. treatment_plan: A list of 4 to 10 concrete steps for this diagnosis (medications, labs, follow-up, patient instructions). Each step one short sentence. Order logically. Never return an empty list.
+
+2. patient_summary: One short paragraph in layman's terms (2-4 sentences) for the patient: what this diagnosis means, what they reported, and what the plan is. No jargon.
+
+Return ONLY a valid JSON object with exactly these keys (no markdown, no code fence, no other text): "treatment_plan": array of strings, "patient_summary": string. Return only the JSON."""
+
+    try:
+        user_content = types.UserContent(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[user_content],
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as e:
+        return {"error": str(e), "treatment_plan": [], "patient_summary": ""}
+
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text)
+    text = text.strip()
+    # Try to extract JSON if model added extra text
+    json_match = re.search(r"\{[\s\S]*\}", text)
+    if json_match:
+        text = json_match.group(0)
+
+    try:
+        data = json.loads(text)
+        plan = data.get("treatment_plan")
+        if not isinstance(plan, list):
+            plan = []
+        plan = [str(s).strip() for s in plan if s and str(s).strip()]
+        summary = (data.get("patient_summary") or "").strip()
+        # Fallback if model returned empty plan
+        if not plan:
+            plan = [
+                f"Follow up as clinically indicated for {diagnosis}.",
+                "Patient to return if symptoms worsen or new concerns arise.",
+                "Continue current medications as prescribed unless otherwise noted.",
+                "Reassess at next visit.",
+            ]
+        if not summary:
+            summary = f"Your care team is considering {diagnosis} based on what you reported. Follow the treatment steps above and return for follow-up as needed."
+        return {"error": "", "treatment_plan": plan, "patient_summary": summary}
+    except json.JSONDecodeError:
+        # Return fallback instead of error so the UI always has something to show
+        fallback_plan = [
+            f"Follow up as clinically indicated for {diagnosis}.",
+            "Patient to return if symptoms worsen or new concerns arise.",
+            "Continue current medications as prescribed unless otherwise noted.",
+            "Reassess at next visit.",
+        ]
+        fallback_summary = f"Your care team is considering {diagnosis} based on your visit. Follow the treatment steps listed and return for follow-up as needed."
+        return {"error": "", "treatment_plan": fallback_plan, "patient_summary": fallback_summary}

@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
-from .gemini_service import intake_from_audio
+from .gemini_service import intake_from_audio, plan_for_diagnosis
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -235,3 +235,40 @@ def audio_extract(request):
             {'detail': str(e), 'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def clinical_plan_for_diagnosis(request):
+    """
+    POST { diagnosis, symptoms?, document? } -> { treatment_plan, patient_summary }.
+    Gemini returns a treatment plan and layman's summary for the selected diagnosis.
+    """
+    data = request.data or {}
+    diagnosis = (data.get('diagnosis') or '').strip()
+    if not diagnosis:
+        return Response(
+            {'detail': 'Missing or empty "diagnosis".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    symptoms = data.get('symptoms')
+    if not isinstance(symptoms, list):
+        symptoms = []
+    document = (data.get('document') or '').strip()
+    result = plan_for_diagnosis(diagnosis, symptoms, document)
+    plan = result.get('treatment_plan') or []
+    summary = (result.get('patient_summary') or '').strip()
+    if result.get('error'):
+        if not plan:
+            plan = [
+                f'Follow up as clinically indicated for {diagnosis}.',
+                'Patient to return if symptoms worsen or new concerns arise.',
+                'Continue current medications as prescribed unless otherwise noted.',
+                'Reassess at next visit.',
+            ]
+        if not summary:
+            summary = f'Your care team is considering {diagnosis} based on your visit. Follow the treatment steps listed and return for follow-up as needed.'
+    return Response({
+        'treatment_plan': plan,
+        'patient_summary': summary,
+    }, status=status.HTTP_200_OK)

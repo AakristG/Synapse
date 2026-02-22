@@ -55,16 +55,16 @@ export default function PatientDetail() {
     if (!window.confirm(`Delete patient ${patient.name} (ID ${id})? This cannot be undone.`)) return
     deletePatient(id)
     toast.success('Patient removed.')
-    navigate('/consultation', { replace: true })
+    navigate('/patients', { replace: true })
   }
 
   if (!patient) {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6">
         <p className="text-neutral-600 font-medium">Patient not found.</p>
-        <Link to="/consultation" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
+        <Link to="/patients" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
           <ArrowLeft size={18} />
-          Back to Consultation
+          Back to All Patients
         </Link>
       </div>
     )
@@ -75,11 +75,11 @@ export default function PatientDetail() {
       <header className="sticky top-0 z-10 h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between print:flex">
         <div className="flex items-center gap-4">
           <Link
-            to="/consultation"
+            to="/patients"
             className="print:hidden flex items-center gap-2 text-neutral-600 hover:text-red-600 font-bold text-sm"
           >
             <ArrowLeft size={20} />
-            Back
+            Back to All Patients
           </Link>
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white">

@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { api } from '../api'
 import type { StoredPatient } from './PatientDetail'
+import axxessLogo from '../assets/axxess-logo.png'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 
@@ -66,6 +67,10 @@ export default function Consultation() {
   const [now, setNow] = useState(() => new Date())
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(null)
+  const [planForDiagnosisLoading, setPlanForDiagnosisLoading] = useState(false)
+  const [treatmentPlanForSelection, setTreatmentPlanForSelection] = useState<string[] | null>(null)
+  const [patientSummaryForSelection, setPatientSummaryForSelection] = useState<string | null>(null)
   const [meds, setMeds] = useState<string[]>([])
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -98,7 +103,12 @@ export default function Consultation() {
         allDiagnoses.push(d.trim())
       }
     }
-    if (allDiagnoses.length > 0) setDiagnosis(allDiagnoses)
+    if (allDiagnoses.length > 0) {
+      setDiagnosis(allDiagnoses)
+      setSelectedDiagnosis(allDiagnoses[0] ?? null)
+      setTreatmentPlanForSelection(null)
+      setPatientSummaryForSelection(null)
+    }
     // Treatment & Plan: steps from Gemini (Synapse + primary diagnosis)
     const plan = Array.isArray(result.treatment_plan)
       ? result.treatment_plan.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
@@ -129,6 +139,35 @@ export default function Consultation() {
 
   const scrollToBottom = () => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   useEffect(() => { scrollToBottom() }, [transcript])
+
+  const documentFromTranscript = useMemo(
+    () => transcript.find((l) => l.speaker === 'Synapse')?.text ?? '',
+    [transcript],
+  )
+
+  useEffect(() => {
+    if (!selectedDiagnosis || (!symptoms.length && !documentFromTranscript.trim())) return
+    let cancelled = false
+    setPlanForDiagnosisLoading(true)
+    api
+      .planForDiagnosis(selectedDiagnosis, symptoms, documentFromTranscript)
+      .then((res) => {
+        if (cancelled) return
+        setTreatmentPlanForSelection((res.treatment_plan as string[]) || [])
+        setPatientSummaryForSelection((res.patient_summary as string) || '')
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTreatmentPlanForSelection(null)
+          setPatientSummaryForSelection(null)
+          toast.error('Could not update plan for selected diagnosis.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPlanForDiagnosisLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [selectedDiagnosis, symptoms, documentFromTranscript])
 
   const startSession = useCallback(() => {
     resetSession()
@@ -226,6 +265,9 @@ export default function Consultation() {
     setTranscript([])
     setSymptoms([])
     setDiagnosis([])
+    setSelectedDiagnosis(null)
+    setTreatmentPlanForSelection(null)
+    setPatientSummaryForSelection(null)
     setMeds([])
   }
 
@@ -264,7 +306,7 @@ export default function Consultation() {
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
-            <img src="/Users/lanemeeks/Documents/GitHub/Axxess-2026/frontend/src/assets/axxess-logo.png" alt="Axxess" className="w-full h-full object-contain rounded-xl" />
+            <img src={axxessLogo} alt="Axxess" className="w-full h-full object-contain" />
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
@@ -284,7 +326,8 @@ export default function Consultation() {
         </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden p-6 gap-6 items-stretch min-h-0">
+      <main className="flex-1 flex flex-col overflow-auto p-6 gap-6 min-h-0">
+        <div className="flex min-h-[50vh] shrink-0 gap-6">
         <section className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden relative min-h-0">
           <div className="px-8 py-5 border-b border-neutral-100 flex items-center justify-between bg-white z-10">
             <div className="flex items-center gap-4">
@@ -418,21 +461,12 @@ export default function Consultation() {
           )}
         </section>
 
-        <aside className="flex-1 min-w-0 flex gap-4 flex-col min-h-0">
-          <div className="shrink-0 flex items-center justify-between gap-4">
-            <button
-              onClick={resetSession}
-              className="shrink-0 py-2.5 px-4 border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-100 hover:bg-red-50 rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
-            >
-              <Trash2 size={14} strokeWidth={2.5} />
-              Discard Session Data
-            </button>
-          </div>
+        <aside className="w-80 shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden">
           {patients.length > 0 && (
             <div className="shrink-0">
-              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Recorded patients</h3>
-              <div className="flex flex-col gap-2 max-h-40 overflow-auto">
-                {patients.map((p) => (
+              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Recently Recorded Patients</h3>
+              <div className="flex flex-col gap-2">
+                {patients.slice(0, 3).map((p) => (
                   <div
                     key={p.id}
                     className="flex items-center gap-2 p-3 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all group"
@@ -463,15 +497,48 @@ export default function Consultation() {
                   </div>
                 ))}
               </div>
+              <Link
+                to="/patients"
+                className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-[12px] transition-all"
+              >
+                View All Patients
+              </Link>
             </div>
           )}
-          <div className="flex gap-4 flex-1 min-h-0 min-w-0">
-          <div className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
-              <h3 className="text-sm font-bold text-neutral-800">Medical Summary</h3>
+              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-6">
-              <section>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
+              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <ClipboardList size={80} />
+                    </div>
+                    {planForDiagnosisLoading ? (
+                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative flex items-center gap-2">
+                        <Loader2 size={16} className="animate-spin shrink-0" />
+                        Updating summary for selected diagnosis...
+                      </p>
+                    ) : patientSummaryForSelection ? (
+                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{patientSummaryForSelection}</p>
+                    ) : (
+                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
+                    )}
+              </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+        </div>
+
+        <div className="w-full shrink-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
+            <h3 className="text-sm font-bold text-neutral-800">Medical Summary</h3>
+          </div>
+          <div className="overflow-auto px-6 py-4">
+            <div className="flex flex-wrap gap-x-8 gap-y-6">
+              <section className="min-w-[200px] flex-1">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2 text-neutral-800">
                         <Activity size={16} className="text-red-600" strokeWidth={3} />
@@ -502,32 +569,43 @@ export default function Consultation() {
                       )}
                     </div>
               </section>
-              <section>
+              <section className="min-w-[200px] flex-1">
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
                   <Stethoscope size={16} className="text-red-600" strokeWidth={3} />
                   <h4 className="text-sm font-bold tracking-tight">Possible Diagnosis (ICD-10-CM)</h4>
                 </div>
                     <div className="space-y-3">
                       {diagnosis.length > 0 ? (
-                        diagnosis.map((d, i) => (
-                          <motion.div
-                            initial={{ x: 10, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
-                            className="p-4 bg-red-50 border border-red-100 rounded-2xl shadow-sm group hover:bg-red-100 transition-all"
-                          >
-                            <div className="flex items-start justify-between">
-                              <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
-                              <div className="bg-red-600 text-white p-1 rounded-lg">
-                                <CheckCircle2 size={14} fill="currentColor" />
+                        diagnosis.map((d, i) => {
+                          const isSelected = selectedDiagnosis === d
+                          return (
+                            <motion.div
+                              initial={{ x: 10, opacity: 0 }}
+                              animate={{ x: 0, opacity: 1 }}
+                              key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setSelectedDiagnosis(d)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDiagnosis(d) } }}
+                              className={`p-4 rounded-2xl shadow-sm group transition-all cursor-pointer border-2 ${isSelected ? 'bg-red-100 border-red-600 ring-2 ring-red-200' : 'bg-red-50 border border-red-100 hover:bg-red-100 border-transparent'}`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
+                                {isSelected ? (
+                                  <div className="bg-red-600 text-white p-1 rounded-lg" title="Selected — plan and summary reflect this diagnosis">
+                                    <CheckCircle2 size={14} fill="currentColor" />
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-red-600 font-bold uppercase">Click to select</span>
+                                )}
                               </div>
-                            </div>
-                            <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
-                              <Zap size={10} fill="currentColor" />
-                              {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
-                            </p>
-                          </motion.div>
-                        ))
+                              <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
+                                <Zap size={10} fill="currentColor" />
+                                {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
+                              </p>
+                            </motion.div>
+                          )
+                        })
                       ) : (
                         <div className="h-16 border-2 border-dashed border-neutral-100 rounded-2xl flex items-center justify-center">
                           <p className="text-xs text-neutral-300 font-bold tracking-widest uppercase">Awaiting Clinical Data</p>
@@ -535,14 +613,19 @@ export default function Consultation() {
                       )}
                 </div>
               </section>
-              <section>
+              <section className="min-w-[200px] flex-1">
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
                   <Pill size={16} className="text-red-600" strokeWidth={3} />
                   <h4 className="text-sm font-bold tracking-tight">Treatment & Plan</h4>
                 </div>
                     <div className="space-y-3">
-                      {meds.length > 0 ? (
-                        meds.map((m, i) => (
+                      {planForDiagnosisLoading ? (
+                        <p className="text-xs text-neutral-500 italic font-medium flex items-center gap-2">
+                          <Loader2 size={14} className="animate-spin" />
+                          Updating plan for selected diagnosis...
+                        </p>
+                      ) : (treatmentPlanForSelection != null && treatmentPlanForSelection.length > 0 ? treatmentPlanForSelection : meds).length > 0 ? (
+                        (treatmentPlanForSelection != null && treatmentPlanForSelection.length > 0 ? treatmentPlanForSelection : meds).map((m, i) => (
                           <motion.div
                             initial={{ y: 5, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
@@ -555,7 +638,9 @@ export default function Consultation() {
                             <div className="flex-1">
                               <span className="text-neutral-500 font-medium mr-1.5">{i + 1}.</span>
                               {m}
-                              <p className="text-[10px] text-neutral-400 font-medium mt-1">From Synapse (treatment plan)</p>
+                              <p className="text-[10px] text-neutral-400 font-medium mt-1">
+                                {treatmentPlanForSelection != null && treatmentPlanForSelection.length > 0 ? 'For selected diagnosis' : 'From Synapse (treatment plan)'}
+                              </p>
                             </div>
                           </motion.div>
                         ))
@@ -566,24 +651,7 @@ export default function Consultation() {
               </section>
             </div>
           </div>
-
-          <div className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm min-h-0 overflow-hidden">
-            <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
-              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
-              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <ClipboardList size={80} />
-                    </div>
-                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
-              </div>
-              </div>
-            </div>
-          </div>
-          </div>
-        </aside>
+        </div>
       </main>
 
       <footer className="h-10 shrink-0 bg-white border-t border-neutral-200 z-20" />
