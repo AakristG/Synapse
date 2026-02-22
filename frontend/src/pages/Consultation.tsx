@@ -481,9 +481,31 @@ export default function Consultation() {
           </span>
         </div>
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
-              <Clock size={14} />
-              {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
+                <Clock size={14} />
+                {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </div>
+              <a
+                href="#medical-summary"
+                onClick={(e) => {
+                  e.preventDefault()
+                  document.getElementById('medical-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="text-sm font-bold text-neutral-700 hover:text-red-600  transition-colors"
+              >
+                Medical Summary
+              </a>
+              <a
+                href="#patient-information"
+                onClick={(e) => {
+                  e.preventDefault()
+                  document.getElementById('patient-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="text-sm font-bold text-neutral-700 hover:text-red-600 transition-colors"
+              >
+                Patient Information
+              </a>
             </div>
             <Link
               to="/triage"
@@ -503,7 +525,7 @@ export default function Consultation() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col overflow-auto p-6 gap-6 min-h-0 phase-in-stagger">
+      <main className="flex-1 flex flex-col overflow-auto p-6 gap-30 min-h-0 phase-in-stagger">
         <div className="flex min-h-[50vh] shrink-0 gap-6">
         <section className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden relative min-h-0">
           <div className="px-8 py-5 border-b border-neutral-100 flex items-center justify-between bg-white z-10">
@@ -653,167 +675,91 @@ export default function Consultation() {
             </div>
           </div>
         </section>
-
-        <aside className="w-80 shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden">
-          {patients.length > 0 && (
-            <div className="shrink-0">
-              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Recently Recorded Patients</h3>
-              <div className="flex flex-col gap-2">
-                {patients.slice(0, 3).map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-2 p-3 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all group"
-                  >
-                    <Link
-                      to={`/patient/${p.id}`}
-                      className="flex items-center gap-3 min-w-0 flex-1"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0 group-hover:bg-red-200">
-                        <User size={20} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
-                        <p className="text-xs text-neutral-500">
-                          {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-red-600">#{p.id}</span>
-                        </p>
-                      </div>
-                      <ChevronRight size={16} className="text-neutral-300 shrink-0" />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => removePatient(p.id, e)}
-                      className="shrink-0 p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                      title="Delete patient"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <Link
-                to="/patients"
-                className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-[12px] transition-all"
-              >
-                View All Patients
-              </Link>
-            </div>
-          )}
-          <div className="flex-1 min-h-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
-              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
-              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <ClipboardList size={80} />
-                    </div>
-                    {planForDiagnosisLoading ? (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative flex items-center gap-2">
-                        <Loader2 size={16} className="animate-spin shrink-0" />
-                        Updating summary for selected diagnosis...
-                      </p>
-                    ) : patientSummaryForSelection ? (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{patientSummaryForSelection}</p>
-                    ) : (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
-                    )}
-              </div>
-              </div>
-            </div>
-          </div>
-        </aside>
         </div>
 
-        <div className="w-full shrink-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
+        <div id="medical-summary" className="w-full shrink-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
             <h3 className="text-sm font-bold text-neutral-800">Medical Summary</h3>
           </div>
           <div className="overflow-auto px-6 py-4">
             <div className="flex flex-wrap gap-x-8 gap-y-6">
-              <section className="min-w-[200px] flex-1">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2 text-neutral-800">
-                        <Activity size={16} className="text-red-600" strokeWidth={3} />
-                        <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
-                      </div>
-                      <button type="button" className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">Edit</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2.5">
-                      {symptoms.length > 0 ? (
-                        symptoms.map((tag, i) => (
-                          <motion.span
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            key={`symptom-${i}-${String(tag).slice(0, 20)}`}
-                            className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
+              <div className="min-w-[200px] flex-1 flex flex-col gap-6">
+                <section>
+                  <div className="flex items-center gap-2 mb-4 text-neutral-800">
+                    <Activity size={16} className="text-red-600" strokeWidth={3} />
+                    <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2.5">
+                    {symptoms.length > 0 ? (
+                      symptoms.map((tag, i) => (
+                        <motion.span
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          key={`symptom-${i}-${String(tag).slice(0, 20)}`}
+                          className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
+                        >
+                          {tag}
+                          <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                        </motion.span>
+                      ))
+                    ) : (
+                      <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
+                    )}
+                  </div>
+                </section>
+                <section>
+                  <div className="flex items-center gap-2 mb-4 pt-10 text-neutral-800">
+                    <Stethoscope size={16} className="text-red-600" strokeWidth={3} />
+                    <h4 className="text-sm font-bold tracking-tight">Possible Diagnosis (ICD-10-CM)</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {diagnosis.length > 0 ? (
+                      diagnosis.map((d, i) => {
+                        const isSelected = selectedDiagnosis === d
+                        return (
+                          <motion.div
+                            initial={{ x: 10, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSelectedDiagnosis(d)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDiagnosis(d) } }}
+                            className={`p-4 rounded-2xl shadow-sm group transition-all cursor-pointer border-2 ${isSelected ? 'bg-red-100 border-red-600 ring-2 ring-red-200' : 'bg-red-50 border border-red-100 hover:bg-red-100 border-transparent'}`}
                           >
-                            {tag}
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                          </motion.span>
-                        ))
-                      ) : (
-                        <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
-                      )}
-                      {transcript.length > 0 && !isRecording && !isProcessing && (
-                        <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-red-400 hover:text-red-600 transition-all">
-                          <Plus size={14} />
-                        </button>
-                      )}
-                    </div>
-              </section>
-              <section className="min-w-[200px] flex-1">
-                <div className="flex items-center gap-2 mb-4 text-neutral-800">
-                  <Stethoscope size={16} className="text-red-600" strokeWidth={3} />
-                  <h4 className="text-sm font-bold tracking-tight">Possible Diagnosis (ICD-10-CM)</h4>
-                </div>
-                    <div className="space-y-3">
-                      {diagnosis.length > 0 ? (
-                        diagnosis.map((d, i) => {
-                          const isSelected = selectedDiagnosis === d
-                          return (
-                            <motion.div
-                              initial={{ x: 10, opacity: 0 }}
-                              animate={{ x: 0, opacity: 1 }}
-                              key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setSelectedDiagnosis(d)}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDiagnosis(d) } }}
-                              className={`p-4 rounded-2xl shadow-sm group transition-all cursor-pointer border-2 ${isSelected ? 'bg-red-100 border-red-600 ring-2 ring-red-200' : 'bg-red-50 border border-red-100 hover:bg-red-100 border-transparent'}`}
-                            >
-                              <div className="flex items-start justify-between">
-                                <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
-                                {isSelected ? (
-                                  <div className="bg-red-600 text-white p-1 rounded-lg" title="Selected — plan and summary reflect this diagnosis">
-                                    <CheckCircle2 size={14} fill="currentColor" />
-                                  </div>
-                                ) : (
-                                  <span className="text-[10px] text-red-600 font-bold uppercase">Click to select</span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
-                                <Zap size={10} fill="currentColor" />
-                                {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
-                              </p>
-                            </motion.div>
-                          )
-                        })
-                      ) : (
-                        <div className="h-16 border-2 border-dashed border-neutral-100 rounded-2xl flex items-center justify-center">
-                          <p className="text-xs text-neutral-300 font-bold tracking-widest uppercase">Awaiting Clinical Data</p>
-                        </div>
-                      )}
-                </div>
-              </section>
-              <section className="min-w-[200px] flex-1">
+                            <div className="flex items-start justify-between">
+                              <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
+                              {isSelected ? (
+                                <div className="bg-red-600 text-white p-1 rounded-lg" title="Selected — plan and summary reflect this diagnosis">
+                                  <CheckCircle2 size={14} fill="currentColor" />
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-red-600 font-bold uppercase">Click to select</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
+                              <Zap size={10} fill="currentColor" />
+                              {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
+                            </p>
+                          </motion.div>
+                        )
+                      })
+                    ) : (
+                      <div className="h-16 border-2 border-dashed border-neutral-100 rounded-2xl flex items-center justify-center">
+                        <p className="text-xs text-neutral-300 font-bold tracking-widest uppercase">Awaiting Clinical Data</p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+              <section className="min-w-[200px] flex-1 flex flex-col items-center">
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
                   <Pill size={16} className="text-red-600" strokeWidth={3} />
                   <h4 className="text-sm font-bold tracking-tight">Treatment & Plan</h4>
                 </div>
-                    <div className="space-y-3">
+                    <div className="space-y-3 w-full max-w-md flex flex-col items-center">
                       {planForDiagnosisLoading ? (
-                        <p className="text-xs text-neutral-500 italic font-medium flex items-center gap-2">
+                        <p className="text-xs text-neutral-500 italic font-medium flex items-center justify-center gap-2">
                           <Loader2 size={14} className="animate-spin" />
                           Updating plan for selected diagnosis...
                         </p>
@@ -838,10 +784,82 @@ export default function Consultation() {
                           </motion.div>
                         ))
                       ) : (
-                        <p className="text-xs text-neutral-400 italic font-medium">No treatments identified yet...</p>
+                        <p className="text-xs text-neutral-400 italic font-medium text-center">No treatments identified yet...</p>
                       )}
                 </div>
               </section>
+            </div>
+          </div>
+        </div>
+
+        <div id="patient-information" className="w-full shrink-0 flex flex-wrap gap-6">
+          {patients.length > 0 && (
+            <div className="flex-1 min-w-[280px] flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
+                <h3 className="text-sm font-bold text-neutral-800">Recently Recorded Patients</h3>
+              </div>
+              <div className="px-6 py-5">
+                <div className="flex flex-col gap-5">
+                  {patients.slice(0, 3).map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-3 p-4 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all group"
+                    >
+                      <Link
+                        to={`/patient/${p.id}`}
+                        className="flex items-center gap-3 min-w-0 flex-1"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0 group-hover:bg-red-200">
+                          <User size={20} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
+                          <p className="text-xs text-neutral-500">
+                            {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-red-600">#{p.id}</span>
+                          </p>
+                        </div>
+                        <ChevronRight size={16} className="text-neutral-300 shrink-0" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={(e) => removePatient(p.id, e)}
+                        className="shrink-0 p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        title="Delete patient"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/patients"
+                  className="mt-3 inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-[12px] transition-all"
+                >
+                  View All Patients
+                </Link>
+              </div>
+            </div>
+          )}
+          <div className="flex-1 min-w-[280px] flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
+              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
+            </div>
+            <div className="px-6 py-4 flex flex-col items-center justify-center">
+              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group w-full max-w-2xl text-center">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <ClipboardList size={80} />
+                </div>
+                {planForDiagnosisLoading ? (
+                  <p className="text-[13px] leading-relaxed opacity-90 font-medium relative flex items-center justify-center gap-2">
+                    <Loader2 size={16} className="animate-spin shrink-0" />
+                    Updating summary for selected diagnosis...
+                  </p>
+                ) : patientSummaryForSelection ? (
+                  <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{patientSummaryForSelection}</p>
+                ) : (
+                  <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

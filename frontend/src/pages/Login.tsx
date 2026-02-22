@@ -36,7 +36,6 @@ export default function Login() {
     <div className="login-page phase-in">
       <div className="phase-in-stagger login-page-inner">
       <div className="login-left">
-        <img src={axxessLogo} alt="Axxess" className="login-logo" />
         <h1 className="text-2xl font-bold text-red-700">Synapse</h1>
         <p className="login-mission">
           Empowering physicians with AI-powered documentation and support
@@ -48,7 +47,7 @@ export default function Login() {
         <form onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
           <label>
-            Username
+            Name
             <input
               type="text"
               value={username}
