@@ -10,6 +10,7 @@ class UserProfile(models.Model):
     role = models.CharField(
         max_length=16,
         choices=[
+            ('patient', 'Patient'),
             ('emt', 'EMT'),
             ('nurse', 'Nurse'),
             ('physician', 'Physician'),

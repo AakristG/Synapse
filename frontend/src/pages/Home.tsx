@@ -61,7 +61,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>
-          <p className="home-table-caption">One example patient shown. Use “Record Visit” to sign in and log a new visit.</p>
+          <p className="home-table-caption">One example patient shown. Use "Record Visit" to sign in and log a new visit.</p>
         </section>
       </main>
     </div>

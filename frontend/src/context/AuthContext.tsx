@@ -1,13 +1,28 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { api } from '../api'
 
-const AuthContext = createContext(null)
+interface User {
+  id: number
+  username: string
+  role: string
+}
+
+interface AuthContextValue {
+  user: User | null
+  token: string
+  loading: boolean
+  login: (username: string, password: string) => Promise<User>
+  logout: () => void
+  isAuthenticated: boolean
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null)
 
 const TOKEN_KEY = 'token'
 const USER_KEY = 'user'
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(() => {
     try {
       const u = localStorage.getItem(USER_KEY)
       return u ? JSON.parse(u) : null
@@ -18,7 +33,7 @@ export function AuthProvider({ children }) {
   const [token, setTokenState] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [loading, setLoading] = useState(!!localStorage.getItem(TOKEN_KEY))
 
-  const setToken = useCallback((t) => {
+  const setToken = useCallback((t: string) => {
     if (t) {
       localStorage.setItem(TOKEN_KEY, t)
       setTokenState(t)
@@ -30,11 +45,12 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const login = useCallback(async (username, password) => {
-    const data = await api.login(username, password)
+  const login = useCallback(async (username: string, password: string): Promise<User> => {
+    const data = await api.login(username, password) as { access: string; user: User }
     setToken(data.access)
     setUser(data.user)
     localStorage.setItem(USER_KEY, JSON.stringify(data.user))
+    return data.user
   }, [setToken])
 
   const logout = useCallback(() => {
@@ -48,18 +64,18 @@ export function AuthProvider({ children }) {
     }
     api.me()
       .then((u) => {
-        setUser(u)
+        setUser(u as User)
         localStorage.setItem(USER_KEY, JSON.stringify(u))
       })
       .catch(() => setToken(''))
       .finally(() => setLoading(false))
-  }, [token])
+  }, [token, setToken])
 
-  const value = { user, token, loading, login, logout, isAuthenticated: !!token }
+  const value: AuthContextValue = { user, token, loading, login, logout, isAuthenticated: !!token }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx

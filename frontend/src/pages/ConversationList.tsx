@@ -3,17 +3,25 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import './ConversationList.css'
 
+interface Conversation {
+  id: number
+  session_id: string
+  source: string
+  created_at: string
+  transcripts?: { id: number }[]
+}
+
 export default function ConversationList() {
-  const [list, setList] = useState([])
+  const [list, setList] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [source, setSource] = useState('consultation')
 
   useEffect(() => {
     api.listConversations()
-      .then(setList)
-      .catch((e) => setError(e.message))
+      .then((data) => setList(Array.isArray(data) ? (data as Conversation[]) : []))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -21,8 +29,8 @@ export default function ConversationList() {
     setCreating(true)
     setError(null)
     api.createConversation({ source })
-      .then((conv) => window.location.assign(`/conversations/${conv.id}`))
-      .catch((e) => { setError(e.message); setCreating(false) })
+      .then((conv) => { window.location.assign(`/conversations/${(conv as Conversation).id}`) })
+      .catch((e) => { setError(e instanceof Error ? e.message : 'Failed'); setCreating(false) })
   }
 
   if (loading) return <div className="page-loading">Loading conversations…</div>
@@ -44,7 +52,7 @@ export default function ConversationList() {
       </div>
       {error && <div className="error-banner">{error}</div>}
       {list.length === 0 && !error && (
-        <p className="empty">No conversations yet. Start one with “New conversation”.</p>
+        <p className="empty">No conversations yet. Start one with "New conversation".</p>
       )}
       <ul className="conversation-cards">
         {list.map((c) => (

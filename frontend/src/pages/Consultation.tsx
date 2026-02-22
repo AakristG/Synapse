@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, ChangeEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Mic,
   Square,
@@ -17,50 +18,90 @@ import {
   Clock,
   ChevronRight,
   Plus,
+  User,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
-import axxessLogo from '../assets/axxess-logo.png'
 import { toast } from 'sonner'
 import { api } from '../api'
+import type { StoredPatient } from './PatientDetail'
+
+const PATIENTS_STORAGE_KEY = 'synapse_patients'
+
+interface TranscriptLine {
+  speaker: string
+  text: string
+}
+
+interface ExtractionResult {
+  transcript?: string
+  document?: string
+  name?: string
+  age?: string
+  symptoms?: string[]
+  diagnosis?: string
+  [key: string]: unknown
+}
+
+function generatePatientId(): string {
+  return String(Math.floor(1000000000 + Math.random() * 9000000000))
+}
+
+function loadPatients(): StoredPatient[] {
+  try {
+    return JSON.parse(localStorage.getItem(PATIENTS_STORAGE_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
 
 export default function Consultation() {
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [transcript, setTranscript] = useState([])
+  const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [now, setNow] = useState(() => new Date())
-  const [symptoms, setSymptoms] = useState([])
-  const [diagnosis, setDiagnosis] = useState([])
-  const [meds, setMeds] = useState([])
+  const [symptoms, setSymptoms] = useState<string[]>([])
+  const [diagnosis, setDiagnosis] = useState<string[]>([])
+  const [meds, setMeds] = useState<string[]>([])
   const [documentText, setDocumentText] = useState('')
-  const fileInputRef = useRef(null)
-  const transcriptEndRef = useRef(null)
-  const mediaRecorderRef = useRef(null)
-  const chunksRef = useRef([])
-  const speechRecognitionRef = useRef(null)
+  const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const transcriptEndRef = useRef<HTMLDivElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null)
   const speechTranscriptRef = useRef('')
 
-  const applyExtractionResult = useCallback((result) => {
-    // Show conversation: (1) what you said — transcript, (2) AI response — structured summary
-    const lines = []
+  const applyExtractionResult = useCallback((result: ExtractionResult) => {
+    const lines: TranscriptLine[] = []
     if (result.transcript && result.transcript.trim()) {
       lines.push({ speaker: 'Clinician', text: result.transcript.trim() })
     }
     if (result.document && result.document.trim()) {
       lines.push({ speaker: 'Synapse', text: result.document.trim() })
     }
-    if (lines.length > 0) {
-      setTranscript(lines)
-    }
+    if (lines.length > 0) setTranscript(lines)
     if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
       setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
     }
-    if (result.diagnosis) {
-      setDiagnosis([result.diagnosis])
+    if (result.diagnosis) setDiagnosis([result.diagnosis])
+    if (result.document) setDocumentText(result.document)
+    const id = generatePatientId()
+    const name = (result.name || '').trim() || 'Unknown'
+    const age = (result.age || '').trim() || ''
+    const patient: StoredPatient = {
+      id,
+      name,
+      age,
+      createdAt: new Date().toISOString(),
+      ...result,
     }
-    if (result.document) {
-      setDocumentText(result.document)
-    }
+    setPatients((prev) => {
+      const next = [patient, ...prev].slice(0, 50)
+      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+    toast.success(`Patient recorded — ID ${id}`)
   }, [])
 
   useEffect(() => {
@@ -82,7 +123,7 @@ export default function Consultation() {
         recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = 'en-US'
-        recognition.onresult = (e) => {
+        recognition.onresult = (e: SpeechRecognitionEvent) => {
           for (let i = e.resultIndex; i < e.results.length; i++) {
             if (e.results[i].isFinal) {
               const t = e.results[i][0].transcript
@@ -112,17 +153,13 @@ export default function Consultation() {
         setIsRecording(true)
         toast.info('Microphone active — recording started.')
       })
-      .catch(() => {
-        toast.error('Microphone access denied or unavailable.')
-      })
+      .catch(() => toast.error('Microphone access denied or unavailable.'))
   }, [])
 
   const stopRecording = useCallback(() => {
     if (!mediaRecorderRef.current || !isRecording) return
     if (speechRecognitionRef.current) {
-      try {
-        speechRecognitionRef.current.stop()
-      } catch {}
+      try { speechRecognitionRef.current.stop() } catch {}
       speechRecognitionRef.current = null
     }
     mediaRecorderRef.current.stop()
@@ -131,17 +168,13 @@ export default function Consultation() {
     const liveTranscript = (speechTranscriptRef.current || '').trim()
     setIsProcessing(true)
     toast.info(liveTranscript ? 'Sending your words to Synapse...' : 'Creating transcript from your recording...')
-    // Brief delay so browser speech recognition can flush final results
     const send = () => {
-      api
-        .extractAudio(blob, '', liveTranscript)
+      api.extractAudio(blob, '', liveTranscript)
         .then((data) => {
-          applyExtractionResult(data)
+          applyExtractionResult(data as ExtractionResult)
           toast.success('Recording transcribed and analyzed.')
         })
-        .catch((err) => {
-          toast.error(err.message || 'Transcription failed.')
-        })
+        .catch((err) => toast.error(err instanceof Error ? err.message : 'Transcription failed.'))
         .finally(() => setIsProcessing(false))
     }
     if (liveTranscript) setTimeout(send, 300)
@@ -149,7 +182,7 @@ export default function Consultation() {
   }, [isRecording, applyExtractionResult])
 
   const handleFileUpload = useCallback(
-    (e) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
       resetSession()
@@ -157,16 +190,13 @@ export default function Consultation() {
       toast.info(`Processing ${file.name}...`)
       const reader = new FileReader()
       reader.onload = () => {
-        const blob = new Blob([reader.result], { type: file.type || 'audio/webm' })
-        api
-          .extractAudio(blob)
+        const blob = new Blob([reader.result as ArrayBuffer], { type: file.type || 'audio/webm' })
+        api.extractAudio(blob)
           .then((data) => {
-            applyExtractionResult(data)
+            applyExtractionResult(data as ExtractionResult)
             toast.success('Audio transcribed and analyzed.')
           })
-          .catch((err) => {
-            toast.error(err.message || 'Transcription failed.')
-          })
+          .catch((err) => toast.error(err instanceof Error ? err.message : 'Transcription failed.'))
           .finally(() => setIsUploading(false))
       }
       reader.readAsArrayBuffer(file)
@@ -182,11 +212,23 @@ export default function Consultation() {
     setDocumentText('')
   }
 
+  const removePatient = (patientId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.confirm('Remove this patient from the list?')) return
+    setPatients((prev) => {
+      const next = prev.filter((p) => p.id !== patientId)
+      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+    toast.success('Patient removed.')
+  }
+
   const handleSendSummary = () => {
     toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
       loading: 'Generating clinical summary...',
-        success: 'Clinical summary generated.',
-        error: 'Failed to generate summary.',
+      success: 'Clinical summary generated.',
+      error: 'Failed to generate summary.',
     })
   }
 
@@ -195,7 +237,7 @@ export default function Consultation() {
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-            <img src="/assets/axxess-logo.png" className="w-full h-full object-contain rounded-xl" />
+            <img src="/assets/axxess-logo.png" alt="Axxess" className="w-full h-full object-contain rounded-xl" />
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
@@ -355,6 +397,43 @@ export default function Consultation() {
               Discard Session Data
             </button>
           </div>
+          {patients.length > 0 && (
+            <div className="shrink-0">
+              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Recorded patients</h3>
+              <div className="flex flex-col gap-2 max-h-40 overflow-auto">
+                {patients.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-2 p-3 bg-white border border-neutral-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
+                  >
+                    <Link
+                      to={`/patient/${p.id}`}
+                      className="flex items-center gap-3 min-w-0 flex-1"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 group-hover:bg-blue-200">
+                        <User size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
+                        <p className="text-xs text-neutral-500">
+                          {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-blue-600">#{p.id}</span>
+                        </p>
+                      </div>
+                      <ChevronRight size={16} className="text-neutral-300 shrink-0" />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={(e) => removePatient(p.id, e)}
+                      className="shrink-0 p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Delete patient"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex gap-4 flex-1 min-h-0 min-w-0">
           <div className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm min-h-0 overflow-hidden">
             <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
@@ -367,7 +446,7 @@ export default function Consultation() {
                         <Activity size={16} className="text-blue-600" strokeWidth={3} />
                         <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
                       </div>
-                      <button className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Edit</button>
+                      <button type="button" className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Edit</button>
                     </div>
                     <div className="flex flex-wrap gap-2.5">
                       {symptoms.length > 0 ? (
@@ -509,6 +588,7 @@ export default function Consultation() {
               </div>
               <div className="shrink-0 px-6 py-4 border-t border-neutral-100 bg-white">
                 <button
+                  type="button"
                   onClick={handleSendSummary}
                   className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all active:scale-[0.98] group"
                 >

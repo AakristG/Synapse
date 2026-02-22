@@ -3,21 +3,54 @@ import { useParams, Link } from 'react-router-dom'
 import { api } from '../api'
 import './ConversationDetail.css'
 
+interface Transcript {
+  id: number
+  role: string
+  text: string
+}
+
+interface ClinicalNote {
+  vitals?: Record<string, unknown>
+  symptoms?: string[]
+  icd_codes?: { code: string; description: string }[]
+  suggested_treatments?: { name: string; notes?: string }[]
+  full_note_text?: string
+}
+
+interface PatientSummary {
+  summary_text?: string
+  recovery_plan?: string
+  medications_plain?: string[]
+  follow_up_instructions?: string
+}
+
+interface Conversation {
+  id: number
+  session_id: string
+  source: string
+  transcripts?: Transcript[]
+  clinical_note?: ClinicalNote
+  patient_summary?: PatientSummary
+}
+
+type BusyState = 'add' | 'transcribe' | 'summarize' | 'emr' | null
+
 export default function ConversationDetail() {
-  const { id } = useParams()
-  const [conv, setConv] = useState(null)
+  const { id } = useParams<{ id: string }>()
+  const [conv, setConv] = useState<Conversation | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [transcriptText, setTranscriptText] = useState('')
   const [transcriptRole, setTranscriptRole] = useState('clinician')
-  const [busy, setBusy] = useState(null)
-  const [emrExport, setEmrExport] = useState(null)
+  const [busy, setBusy] = useState<BusyState>(null)
+  const [emrExport, setEmrExport] = useState<{ status: string; payload: unknown } | null>(null)
 
   const load = () => {
+    if (!id) return
     setError(null)
     api.getConversation(id)
-      .then(setConv)
-      .catch((e) => setError(e.message))
+      .then((data) => setConv(data as Conversation))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setLoading(false))
   }
 
@@ -26,35 +59,38 @@ export default function ConversationDetail() {
   }, [id])
 
   const addTranscript = () => {
-    if (!transcriptText.trim()) return
+    if (!id || !transcriptText.trim()) return
     setBusy('add')
     api.addTranscript(id, { role: transcriptRole, text: transcriptText.trim() })
       .then(() => { setTranscriptText(''); load() })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setBusy(null))
   }
 
   const transcribe = () => {
+    if (!id) return
     setBusy('transcribe')
     api.transcribe(id, { text: transcriptText.trim() || 'Patient reports headache and fatigue. No fever. BP 128/82.', role: transcriptRole })
       .then(() => { setTranscriptText(''); load() })
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setBusy(null))
   }
 
   const summarize = () => {
+    if (!id) return
     setBusy('summarize')
     api.summarize(id)
       .then(load)
-      .catch((e) => setError(e.message))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setBusy(null))
   }
 
   const exportEmr = () => {
+    if (!id) return
     setBusy('emr')
     api.exportEmr(id, { external_system: 'demo_emr' })
-      .then((data) => { setEmrExport(data); load() })
-      .catch((e) => setError(e.message))
+      .then((data) => { setEmrExport(data as { status: string; payload: unknown }); load() })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed'))
       .finally(() => setBusy(null))
   }
 
@@ -62,7 +98,7 @@ export default function ConversationDetail() {
 
   const note = conv?.clinical_note
   const summary = conv?.patient_summary
-  const hasTranscripts = conv?.transcripts?.length > 0
+  const hasTranscripts = (conv?.transcripts?.length ?? 0) > 0
 
   return (
     <div className="conversation-detail">
@@ -76,7 +112,7 @@ export default function ConversationDetail() {
 
       <section className="section transcript-section">
         <h2>Conversation / Dictation</h2>
-        <p className="hint">Add dialogue or paste clinician dictation. Use “Transcribe” to run speech-to-text (demo: paste text as input).</p>
+        <p className="hint">Add dialogue or paste clinician dictation. Use "Transcribe" to run speech-to-text (demo: paste text as input).</p>
         <div className="input-row">
           <select value={transcriptRole} onChange={(e) => setTranscriptRole(e.target.value)}>
             <option value="clinician">Clinician</option>
@@ -89,15 +125,15 @@ export default function ConversationDetail() {
             rows={3}
           />
           <div className="button-row">
-            <button onClick={addTranscript} disabled={busy || !transcriptText.trim()}>
+            <button onClick={addTranscript} disabled={!!busy || !transcriptText.trim()}>
               {busy === 'add' ? 'Adding…' : 'Add transcript'}
             </button>
-            <button onClick={transcribe} disabled={busy} className="secondary">
+            <button onClick={transcribe} disabled={!!busy} className="secondary">
               {busy === 'transcribe' ? 'Transcribing…' : 'Transcribe (STT)'}
             </button>
           </div>
         </div>
-        {hasTranscripts && (
+        {hasTranscripts && conv?.transcripts && (
           <ul className="transcript-list">
             {conv.transcripts.map((t) => (
               <li key={t.id} className={`role-${t.role}`}>
@@ -113,7 +149,7 @@ export default function ConversationDetail() {
         <h2>AI summarization &amp; coding</h2>
         <button
           onClick={summarize}
-          disabled={busy || !hasTranscripts}
+          disabled={!!busy || !hasTranscripts}
           className="primary"
         >
           {busy === 'summarize' ? 'Processing…' : 'Extract vitals, diagnosis, ICD codes & patient summary'}
@@ -133,14 +169,14 @@ export default function ConversationDetail() {
             {(note.symptoms || []).length > 0 && (
               <div className="note-block">
                 <h3>Symptoms</h3>
-                <ul>{note.symptoms.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                <ul>{note.symptoms!.map((s, i) => <li key={i}>{s}</li>)}</ul>
               </div>
             )}
             {(note.icd_codes || []).length > 0 && (
               <div className="note-block">
                 <h3>ICD codes</h3>
                 <ul>
-                  {note.icd_codes.map((icd, i) => (
+                  {note.icd_codes!.map((icd, i) => (
                     <li key={i}><strong>{icd.code}</strong> {icd.description}</li>
                   ))}
                 </ul>
@@ -150,7 +186,7 @@ export default function ConversationDetail() {
               <div className="note-block">
                 <h3>Suggested treatments</h3>
                 <ul>
-                  {note.suggested_treatments.map((t, i) => (
+                  {note.suggested_treatments!.map((t, i) => (
                     <li key={i}>{t.name} {t.notes && `– ${t.notes}`}</li>
                   ))}
                 </ul>
@@ -173,7 +209,7 @@ export default function ConversationDetail() {
             <p><strong>Summary</strong><br />{summary.summary_text}</p>
             <p><strong>Recovery plan</strong><br />{summary.recovery_plan}</p>
             {(summary.medications_plain || []).length > 0 && (
-              <p><strong>Medications</strong><br />{summary.medications_plain.join('; ')}</p>
+              <p><strong>Medications</strong><br />{summary.medications_plain!.join('; ')}</p>
             )}
             {summary.follow_up_instructions && (
               <p><strong>Follow-up</strong><br />{summary.follow_up_instructions}</p>
@@ -184,7 +220,7 @@ export default function ConversationDetail() {
 
       <section className="section emr-section">
         <h2>EMR integration</h2>
-        <button onClick={exportEmr} disabled={busy} className="secondary">
+        <button onClick={exportEmr} disabled={!!busy} className="secondary">
           {busy === 'emr' ? 'Exporting…' : 'Export to EMR (audit payload)'}
         </button>
         {emrExport && (

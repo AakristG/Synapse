@@ -74,25 +74,24 @@ def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
 
     context_line = f'\nPrevious context (if continuing):\n{previous_context}\n' if previous_context else ""
 
-    prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript — the exact words they said.
+    prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript. It may contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
 
 STRICT RULES — you must follow these exactly:
-- Extract ONLY what is explicitly stated in the transcript. Do not infer, assume, or add anything.
+- Extract ONLY what is explicitly stated or clearly intended in the transcript. Do not infer diagnoses or add information the physician did not say.
 - If the transcript does not mention something, leave it empty: "" for strings, [] for symptoms, {} for vitals.
 - Do not invent patient names, ages, vitals, symptoms, or diagnoses. Do not use example or typical values.
-- For the "document" field: list only facts that appear in the transcript. For any section the physician did not mention, write "Not stated." Do not fill in with plausible or common clinical text.
+- SPELLING: In all output (name, age, report, vitals, symptoms, diagnosis, document), use properly spelled words. Correct obvious dictation/ASR errors to standard medical terminology: correct drug names (e.g. "lisinopril" not "lisinapril"), condition names (e.g. "hypertension" not "hipertension"), anatomy, and common clinical terms. Preserve the physician’s intent; only normalize spelling and standardize medical terms.
+- For the "document" field: write a short clinical paragraph using ONLY information from the transcript, with proper spelling and standard medical wording. For any section the physician did not mention, write "Not stated."
 
-- The physician will always start by saying the patient's name, age, and description. 
-
-Extract only when clearly stated in the transcript:
-- name: "" unless a patient name is explicitly said
+Extract only when clearly stated or clearly intended in the transcript:
+- name: "" unless a patient name is explicitly said (spell names correctly if obvious)
 - age: "" unless age is explicitly said
-- report: "" unless chief complaint/reason for visit is explicitly said
-- vitals: {} unless specific vitals (e.g. BP, HR, temp) are explicitly said — then use only those
-- symptoms: [] unless specific symptoms are explicitly said — then only those
-- diagnosis: "" unless assessment/diagnosis is explicitly said
+- report: "" unless chief complaint/reason for visit is explicitly said (use proper spelling)
+- vitals: {} unless specific vitals (e.g. BP, HR, temp) are explicitly said — use standard labels and units
+- symptoms: [] unless specific symptoms are explicitly said — use correctly spelled medical terms
+- diagnosis: "" unless assessment/diagnosis is explicitly said — use correct spelling (e.g. ICD-style or standard terms)
 
-Document: one short paragraph that includes ONLY information from the transcript. Use "Not stated" for any category not mentioned. Do not generate a single fact that is not in the transcript.
+Document: one short paragraph with ONLY information from the transcript, properly spelled and in clear clinical language. Use "Not stated" for any category not mentioned.
 """ + context_line + """
 Transcript to evaluate:
 """
