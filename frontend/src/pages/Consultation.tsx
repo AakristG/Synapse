@@ -132,6 +132,7 @@ export default function Consultation() {
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
   const [typedMessage, setTypedMessage] = useState('')
   const [isSendingText, setIsSendingText] = useState(false)
+  const [responseLanguage, setResponseLanguage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -362,8 +363,9 @@ export default function Consultation() {
     const append = previousContext.length > 0
     setIsProcessing(true)
     toast.info(liveTranscript ? 'Sending your words to Synapse...' : 'Creating transcript from your recording...')
+    const patientsContext = formatPatientsContext(patients)
     const send = () => {
-      api.extractAudio(blob, previousContext, liveTranscript)
+      api.extractAudio(blob, previousContext, liveTranscript, patientsContext, responseLanguage)
         .then((data) => {
           applyExtractionResult(data as ExtractionResult, { append, currentTranscript: transcript })
           toast.success(append ? 'Response added. Continue when ready.' : 'Recording transcribed and analyzed.')
@@ -373,7 +375,7 @@ export default function Consultation() {
     }
     if (liveTranscript) setTimeout(send, 300)
     else send()
-  }, [isRecording, transcript, applyExtractionResult])
+  }, [isRecording, transcript, patients, responseLanguage, applyExtractionResult])
 
   const handleFileUpload = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
@@ -389,7 +391,8 @@ export default function Consultation() {
       const reader = new FileReader()
       reader.onload = () => {
         const blob = new Blob([reader.result as ArrayBuffer], { type: file.type || 'audio/webm' })
-        api.extractAudio(blob, previousContext, '')
+        const patientsContext = formatPatientsContext(patients)
+        api.extractAudio(blob, previousContext, '', patientsContext, responseLanguage)
           .then((data) => {
             applyExtractionResult(data as ExtractionResult, { append, currentTranscript: transcript })
             toast.success(append ? 'Audio added to conversation.' : 'Audio transcribed and analyzed.')
@@ -399,7 +402,7 @@ export default function Consultation() {
       }
       reader.readAsArrayBuffer(file)
     },
-    [transcript, applyExtractionResult],
+    [transcript, patients, responseLanguage, applyExtractionResult],
   )
 
   const sendTypedMessage = useCallback(() => {
@@ -414,7 +417,7 @@ export default function Consultation() {
     setIsProcessing(true)
     const patientsContext = formatPatientsContext(patients)
     api
-      .sendTextToSynapse(text, previousContext, patientsContext)
+      .sendTextToSynapse(text, previousContext, patientsContext, responseLanguage)
       .then((data) => {
         applyExtractionResult(data as ExtractionResult, {
           append: true,
@@ -424,7 +427,7 @@ export default function Consultation() {
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Could not send message.'))
       .finally(() => { setIsSendingText(false); setIsProcessing(false) })
-  }, [typedMessage, transcript, patients, isProcessing, isRecording, isUploading, applyExtractionResult])
+  }, [typedMessage, transcript, patients, responseLanguage, isProcessing, isRecording, isUploading, applyExtractionResult])
 
   const resetSession = () => {
     try {
@@ -652,7 +655,28 @@ export default function Consultation() {
                 <div ref={transcriptEndRef} className="h-4" />
               </AnimatePresence>
             </div>
-            <div className="shrink-0 border-t border-neutral-200 bg-white px-4 py-3 rounded-b-3xl">
+            <div className="shrink-0 border-t border-neutral-200 bg-white px-4 py-3 rounded-b-3xl space-y-2">
+              <div className="flex items-center gap-2">
+                <label htmlFor="response-language" className="text-xs font-medium text-neutral-500 whitespace-nowrap">
+                  Response language:
+                </label>
+                <select
+                  id="response-language"
+                  value={responseLanguage}
+                  onChange={(e) => setResponseLanguage(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                >
+                  <option value="">Auto (same as input)</option>
+                  <option value="English">English</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="French">French</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Arabic">Arabic</option>
+                  <option value="Chinese">Chinese</option>
+                  <option value="Portuguese">Portuguese</option>
+                  <option value="German">German</option>
+                </select>
+              </div>
               <form
                 className="flex gap-2"
                 onSubmit={(e) => { e.preventDefault(); sendTypedMessage() }}
@@ -661,7 +685,7 @@ export default function Consultation() {
                   type="text"
                   value={typedMessage}
                   onChange={(e) => setTypedMessage(e.target.value)}
-                  placeholder="Type to Synapse AI..."
+                  placeholder="Type to Synapse AI (any language)..."
                   disabled={isProcessing || isRecording || isUploading}
                   className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50"
                 />

@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { ArrowLeft, Download, Stethoscope, Trash2, FileText, Maximize2, X, Pencil, Send, Loader2, Plus } from 'lucide-react'
+import { ArrowLeft, Download, Stethoscope, Trash2, FileText, Maximize2, X, Pencil, Send, Loader2, Plus, Languages } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, formatPatientsContext } from '../api'
 
@@ -189,7 +189,8 @@ function buildPdfFromLines(lines: string[]): Blob {
   return new Blob([pdf], { type: 'application/pdf' })
 }
 
-function createClinicalPdfFromPatient(patient: StoredPatient): Blob {
+/** Build the same sectioned lines used for the PDF, so they can be joined as text or passed to buildPdfFromLines. */
+function getClinicalNoteLines(patient: StoredPatient): string[] {
   const documentText = pickString(patient.document, (patient as { payload?: UnknownObject }).payload?.document)
   const parsedDocument = parseDocumentObject(documentText)
   const patientName = pickString(patient.name, parsedDocument?.name, parsedDocument?.patient_name, parsedDocument?.patientName) || 'Unknown'
@@ -246,7 +247,15 @@ function createClinicalPdfFromPatient(patient: StoredPatient): Blob {
     'Do not use as final chart documentation without clinician verification.',
   ])
 
-  return buildPdfFromLines(lines)
+  return lines
+}
+
+function getClinicalNoteAsText(patient: StoredPatient): string {
+  return getClinicalNoteLines(patient).join('\n')
+}
+
+function createClinicalPdfFromPatient(patient: StoredPatient): Blob {
+  return buildPdfFromLines(getClinicalNoteLines(patient))
 }
 
 export default function PatientDetail() {
@@ -260,6 +269,10 @@ export default function PatientDetail() {
   const [isSendingEdit, setIsSendingEdit] = useState(false)
   const [newDiagnosis, setNewDiagnosis] = useState('')
   const [newTreatmentStep, setNewTreatmentStep] = useState('')
+  const [documentLanguage, setDocumentLanguage] = useState('')
+  const [translatedDocument, setTranslatedDocument] = useState('')
+  const [isTranslating, setIsTranslating] = useState(false)
+  const [showTranslateModal, setShowTranslateModal] = useState(false)
   const patient = useMemo(() => {
     const list = loadPatients()
     return list.find((p) => p.id === id) || null
@@ -304,6 +317,38 @@ export default function PatientDetail() {
   const handleViewPdfNewTab = () => {
     if (!medicalPdfUrl) return
     window.open(medicalPdfUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleDownloadTranslated = () => {
+    if (!translatedDocument || !patient) return
+    const blob = new Blob([translatedDocument], { type: 'text/plain;charset=utf-8' })
+    const name = (documentLanguage || 'translated').replace(/\s+/g, '-')
+    const filename = `patient-${patient.id}-clinical-note-${name}.txt`
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast.success('Download started.')
+  }
+
+  const handleViewInLanguage = (targetLanguage: string) => {
+    if (!patient || !targetLanguage.trim()) return
+    setDocumentLanguage(targetLanguage)
+    setTranslatedDocument('')
+    setIsTranslating(true)
+    setShowTranslateModal(true)
+    const noteText = getClinicalNoteAsText(patient)
+    api
+      .translateDocument(noteText, targetLanguage)
+      .then((data: { translated?: string }) => {
+        setTranslatedDocument(typeof data.translated === 'string' ? data.translated : '')
+      })
+      .catch(() => {
+        toast.error('Could not translate document.')
+        setTranslatedDocument('')
+      })
+      .finally(() => setIsTranslating(false))
   }
 
   const handleSendEdit = useCallback(() => {
@@ -492,9 +537,35 @@ export default function PatientDetail() {
           </div>
 
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
-            <div className="pb-3 border-b border-neutral-100 flex items-center justify-between">
+            <div className="pb-3 border-b border-neutral-100 flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-sm font-bold text-neutral-800">Clinical Document (PDF)</h2>
-              <div className="flex items-center gap-2 print:hidden">
+              <div className="flex items-center gap-2 print:hidden flex-wrap">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+                  <Languages size={14} />
+                  View in:
+                </span>
+                <select
+                  value={documentLanguage}
+                  onChange={(e) => {
+                    const lang = e.target.value
+                    setDocumentLanguage(lang)
+                    if (!lang) {
+                      setShowTranslateModal(false)
+                      return
+                    }
+                    handleViewInLanguage(lang)
+                  }}
+                  className="px-3 py-2 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                >
+                  <option value="">Original</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="French">French</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Arabic">Arabic</option>
+                  <option value="Chinese">Chinese</option>
+                  <option value="Portuguese">Portuguese</option>
+                  <option value="German">German</option>
+                </select>
                 <button
                   type="button"
                   onClick={handleViewPdfNewTab}
@@ -708,6 +779,58 @@ export default function PatientDetail() {
               src={medicalPdfUrl}
               className="w-full max-w-6xl flex-1 rounded-xl border border-white/20 bg-white min-h-[80vh]"
             />
+          </div>
+        )}
+
+        {/* Translated document modal */}
+        {showTranslateModal && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Clinical document in another language"
+          >
+            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0">
+                <h3 className="text-lg font-bold text-neutral-800 flex items-center gap-2">
+                  <Languages size={20} />
+                  Clinical document — {documentLanguage || 'Translation'}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadTranslated}
+                    disabled={!translatedDocument || isTranslating}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <Download size={18} />
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTranslateModal(false)}
+                    className="p-2 rounded-lg text-neutral-500 hover:bg-neutral-100"
+                    aria-label="Close"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
+                {isTranslating ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
+                    <Loader2 size={40} className="animate-spin text-red-500 mb-4" />
+                    <p className="font-medium">Translating with Synapse...</p>
+                  </div>
+                ) : translatedDocument ? (
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-neutral-700 leading-relaxed bg-neutral-50 p-4 rounded-xl border border-neutral-100">
+                    {translatedDocument}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-neutral-500">No translation available.</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>

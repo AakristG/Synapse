@@ -15,7 +15,7 @@ from .models import (
     TriageEncounter,
     TriageEvent,
 )
-from .gemini_service import intake_from_audio, intake_from_text, plan_for_diagnosis
+from .gemini_service import intake_from_audio, intake_from_text, plan_for_diagnosis, translate_document
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -275,10 +275,17 @@ def audio_extract(request):
         if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
             mime = 'audio/webm'
         previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
+        patients_context = (request.data.get('patients_context') or request.POST.get('patients_context') or '').strip()
+        response_language = (request.data.get('response_language') or request.POST.get('response_language') or '').strip()
         # If client sent a transcript (e.g. from browser speech recognition), use it so "Clinician" = exactly what they said
         client_transcript = (request.data.get('transcript') or request.POST.get('transcript') or '').strip()
         result = intake_from_audio(
-            audio_bytes, mime_type=mime, previous_context=previous_context, client_transcript=client_transcript
+            audio_bytes,
+            mime_type=mime,
+            previous_context=previous_context,
+            client_transcript=client_transcript,
+            patients_context=patients_context,
+            response_language=response_language,
         )
         if result.get('error') and not result.get('transcript') and not result.get('document'):
             err_msg = result.get('error', 'Unknown error')
@@ -327,10 +334,12 @@ def intake_from_text_api(request):
             )
         previous_context = (data.get('previous_context') or '').strip()
         patients_context = (data.get('patients_context') or '').strip()
+        response_language = (data.get('response_language') or '').strip()
         result = intake_from_text(
             transcript_text,
             previous_context=previous_context,
             patients_context=patients_context,
+            response_language=response_language,
         )
         if result.get('error') and not result.get('transcript') and not result.get('document'):
             err_msg = result.get('error', 'Unknown error')
@@ -396,6 +405,35 @@ def clinical_plan_for_diagnosis(request):
         'treatment_plan': plan,
         'patient_summary': summary,
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def translate_document_api(request):
+    """
+    POST { document: string, target_language: string } -> { translated: string }.
+    Uses Gemini to translate the clinical document to the requested language.
+    """
+    data = request.data or {}
+    document_text = (data.get('document') or '').strip()
+    target_language = (data.get('target_language') or '').strip()
+    if not document_text:
+        return Response(
+            {'detail': 'Missing or empty "document".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not target_language:
+        return Response(
+            {'detail': 'Missing or empty "target_language".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    result = translate_document(document_text, target_language)
+    if result.get('error'):
+        return Response(
+            {'detail': result.get('error', 'Translation failed'), 'translated': ''},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+    return Response({'translated': result.get('translated', '')}, status=status.HTTP_200_OK)
 
 
 def _as_list(value):

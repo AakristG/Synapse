@@ -46,7 +46,7 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple
     if err:
         return "", err
 
-    prompt = """Transcribe this audio word for word. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
+    prompt = """Transcribe this audio word for word. The audio may be in any language (e.g. English, Spanish, French, Hindi). Output in the same language as spoken. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
 
     models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     for model_name in models_to_try:
@@ -77,10 +77,13 @@ def intake_from_text(
     transcript_text: str,
     previous_context: str = "",
     patients_context: str = "",
+    response_language: str = "",
 ) -> dict:
     """
     Step 2: Gemini evaluates the transcript (text only). Extracts structure and builds clinical document.
     If patients_context is provided, the model can also answer questions about specific patients.
+    The transcript may be in any language; user-facing fields (question, document) are returned in
+    the same language as the transcript, or in response_language if specified.
     """
     client, types, err = _get_client()
     if err:
@@ -118,6 +121,11 @@ STRICT RULES — you must follow these exactly:
   - When name, age, and at least one symptom are all present, set "missing" to [] and "question" to null.
 - SPELLING: In all output (name, age, report, vitals, symptoms, diagnosis, document), use properly spelled words. Correct obvious dictation/ASR errors to standard medical terminology: correct drug names (e.g. "lisinopril" not "lisinapril"), condition names (e.g. "hypertension" not "hipertension"), anatomy, and common clinical terms. Preserve the physician’s intent; only normalize spelling and standardize medical terms.
 - For the "document" field: write a short clinical paragraph using ONLY information from the transcript, with proper spelling and standard medical wording. For any section the physician did not mention, write "Not stated."
+
+LANGUAGE (important): The transcript may be in any language (e.g. Spanish, French, Hindi, Arabic). Interpret and extract correctly regardless of language. For the user-facing fields "question" and "document", you MUST respond in the language specified by the following rule (use that language for the entire "question" string and the entire "document" string): (1) If a "response_language" instruction is provided below, use that language. (2) Otherwise, if the user explicitly asks for a response in a specific language (e.g. "answer in Spanish", "respond in French"), use that language. (3) Otherwise, use the same language as the transcript. Keep medical/clinical terms in standard form where appropriate; you may use the same language for those terms (e.g. "hipertensión" in Spanish) or standard English terms in parentheses. The "name" field should stay as stated by the user (any language). Other extracted fields (symptoms, diagnosis, treatment_plan) may be in the response language or in standard medical terminology.
+""" + (
+        f'\nResponse language requested: use "{response_language.strip()}" for "question" and "document".\n' if (response_language or "").strip() else ""
+    ) + """
 
 Extract only when clearly stated or clearly intended in the transcript:
 - name: "" unless a patient name is explicitly said (spell names correctly if obvious)
@@ -213,10 +221,13 @@ def intake_from_audio(
     mime_type: str = "audio/webm",
     previous_context: str = "",
     client_transcript: str = "",
+    patients_context: str = "",
+    response_language: str = "",
 ) -> dict:
     """
     Two-step flow: (1) Transcript = client_transcript if provided, else Gemini transcribes audio.
     (2) Gemini evaluates that transcript only. So "Clinician" = exactly what the user said.
+    Supports multilingual input; responses follow response_language or the language of the transcript.
     """
     # Step 1: Use client-provided transcript (e.g. from browser speech recognition) or transcribe audio
     if client_transcript and client_transcript.strip():
@@ -231,7 +242,12 @@ def intake_from_audio(
         )
 
     # Step 2: Gemini evaluates the transcript (text only) and returns structured output
-    evaluated = intake_from_text(transcript, previous_context=previous_context)
+    evaluated = intake_from_text(
+        transcript,
+        previous_context=previous_context,
+        patients_context=patients_context,
+        response_language=response_language,
+    )
     if evaluated.get("error"):
         return {**evaluated, "transcript": transcript}
 
@@ -346,3 +362,49 @@ Return ONLY a valid JSON object with exactly these keys (no markdown, no code fe
         ]
         fallback_summary = f"Your care team is considering {diagnosis} based on your visit. Follow the treatment steps listed and return for follow-up as needed."
         return {"error": "", "treatment_plan": fallback_plan, "patient_summary": fallback_summary}
+
+
+def translate_document(document_text: str, target_language: str) -> dict:
+    """
+    Use Gemini to translate a clinical document to the target language.
+    Preserves structure and medical terminology where appropriate (e.g. drug names).
+    Returns {"translated": "...", "error": ""} or {"translated": "", "error": "..."}.
+    """
+    client, types, err = _get_client()
+    if err:
+        return {"translated": "", "error": err}
+
+    document_text = (document_text or "").strip()
+    target_language = (target_language or "").strip()
+    if not document_text:
+        return {"translated": "", "error": "No document text to translate"}
+    if not target_language:
+        return {"translated": "", "error": "No target language specified"}
+
+    prompt = f"""You are a medical documentation assistant. Translate the following clinical document into {target_language}.
+
+Rules:
+- Preserve the exact structure: section headers, line breaks, bullet/numbered lists, and formatting.
+- Use proper medical terminology in {target_language} where it exists; keep standard terms (e.g. drug names, ICD-style diagnoses) in a way that is clear for clinicians in that language.
+- Do not add or omit any section or clinical content. This is a translation only.
+- Output ONLY the translated document text, with no preamble, no "Here is the translation", and no markdown code fences.
+
+Document to translate:
+
+{document_text}
+
+Translated document in {target_language}:"""
+
+    try:
+        user_content = types.UserContent(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[user_content],
+        )
+        text = (getattr(response, "text", None) or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text)
+        return {"translated": text.strip(), "error": ""}
+    except Exception as e:
+        return {"translated": "", "error": str(e)}

@@ -87,20 +87,23 @@ export const api = {
   login: (username: string, password: string) =>
     request('/auth/login/', { method: 'POST', body: JSON.stringify({ username, password }) }),
   me: () => request('/auth/me/'),
-  extractAudio: (audioBlob: Blob, previousContext = '', transcript = '') => {
+  extractAudio: (audioBlob: Blob, previousContext = '', transcript = '', patientsContext = '', responseLanguage = '') => {
     const form = new FormData()
     form.append('audio', audioBlob, 'recording.webm')
     if (previousContext) form.append('previous_context', previousContext)
     if (transcript && transcript.trim()) form.append('transcript', transcript.trim())
+    if (patientsContext && patientsContext.trim()) form.append('patients_context', patientsContext.trim())
+    if (responseLanguage && responseLanguage.trim()) form.append('response_language', responseLanguage.trim())
     return request('/audio/extract/', { method: 'POST', body: form })
   },
-  sendTextToSynapse: (transcript: string, previousContext = '', patientsContext = '') =>
+  sendTextToSynapse: (transcript: string, previousContext = '', patientsContext = '', responseLanguage = '') =>
     request('/intake-from-text/', {
       method: 'POST',
       body: JSON.stringify({
         transcript: transcript.trim(),
         previous_context: previousContext,
         ...(patientsContext.trim() ? { patients_context: patientsContext.trim() } : {}),
+        ...(responseLanguage.trim() ? { response_language: responseLanguage.trim() } : {}),
       }),
     }),
   listConversations: () => request('/conversations/'),
@@ -118,6 +121,11 @@ export const api = {
     request('/clinical/plan-for-diagnosis/', {
       method: 'POST',
       body: JSON.stringify({ diagnosis, symptoms, document }),
+    }),
+  translateDocument: (document: string, targetLanguage: string) =>
+    request('/clinical/translate-document/', {
+      method: 'POST',
+      body: JSON.stringify({ document, target_language: targetLanguage }),
     }),
   // ER Triage — commented out
   // listTriageEncounters: () => request('/triage/encounters/'),

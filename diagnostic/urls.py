@@ -15,6 +15,7 @@ urlpatterns = [
     path('conversations/<int:pk>/summarize/', views.summarize),
     path('conversations/<int:pk>/export-emr/', views.export_emr),
     path('clinical/plan-for-diagnosis/', views.clinical_plan_for_diagnosis),
+    path('clinical/translate-document/', views.translate_document_api),
     # ER Triage — commented out
     # path('triage/encounters/', views.triage_encounter_list_create),
     # path('triage/encounters/<int:pk>/', views.triage_encounter_detail),
