@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, User, ChevronRight } from 'lucide-react'
-import { api } from '../api'
 import type { StoredPatient } from './PatientDetail'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
@@ -18,19 +17,9 @@ export default function AllPatients() {
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
 
   useEffect(() => {
-    api.listRecordedPatients()
-      .then((list) => {
-        const arr = Array.isArray(list) ? list : []
-        const items = (arr as StoredPatient[]).map((p) => ({
-          id: p.id ?? '',
-          name: p.name ?? 'Unknown',
-          age: p.age ?? '',
-          createdAt: p.createdAt ?? '',
-          ...p,
-        }))
-        if (items.length > 0) setPatients(items)
-      })
-      .catch(() => {})
+    const onStorage = () => setPatients(loadPatients())
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   return (
@@ -45,12 +34,12 @@ export default function AllPatients() {
             Back to Consultation
           </Link>
         </div>
-        <h1 className="font-bold text-neutral-900">All Documentation & Stored Patient Data</h1>
+        <h1 className="font-bold text-neutral-900">All Recorded Patients</h1>
       </header>
       <main className="flex-1 p-6 overflow-auto">
         <div className="max-w-2xl mx-auto">
           {patients.length === 0 ? (
-            <p className="text-neutral-500 text-center py-12">No recorded patients yet. Record a visit from the Consultation page or receive a patient call via Twilio.</p>
+            <p className="text-neutral-500 text-center py-12">No recorded patients yet. Record a visit from the Consultation page.</p>
           ) : (
             <div className="flex flex-col gap-2">
               {patients.map((p) => (

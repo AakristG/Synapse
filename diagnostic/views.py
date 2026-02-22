@@ -3,8 +3,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport, RecordedPatient
-from .gemini_service import intake_from_audio, intake_from_text, plan_for_diagnosis
+from .models import Conversation, Transcript, ClinicalNote, PatientSummary, EMRExport
+from .gemini_service import intake_from_audio, plan_for_diagnosis
 from .serializers import (
     ConversationSerializer,
     TranscriptSerializer,
@@ -183,16 +183,9 @@ def export_emr(request, pk):
         'export_id': export.id,
         'status': export.status,
         'payload': payload,
-    }, status=status.HTTP_200_OK)
-
-
 def _generate_patient_id():
     import random
     return str(random.randint(1000000000, 9999999999))
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def recorded_patients_create(request):
     """Create a recorded patient (from Synapse web or API)."""
     data = request.data or {}
@@ -219,6 +212,10 @@ def recorded_patients_create(request):
     }, status=status.HTTP_201_CREATED)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def recorded_patients_list(request):
@@ -236,24 +233,19 @@ def recorded_patients_list(request):
     return Response(out)
 
 
-@api_view(['GET', 'DELETE'])
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
-def recorded_patient_detail(request, external_id):
-    """GET: one recorded patient by external_id. DELETE: remove that patient."""
+def recorded_patient_delete(request, external_id):
+    """Delete a recorded patient by external_id."""
     try:
         patient = RecordedPatient.objects.get(external_id=external_id)
     except RecordedPatient.DoesNotExist:
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-    if request.method == 'DELETE':
-        patient.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    return Response({
-        'id': patient.external_id,
-        'name': patient.name or 'Unknown',
-        'age': patient.age or '',
-        'createdAt': patient.created_at.isoformat() if patient.created_at else '',
-        **patient.payload,
-    })
+    patient.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['POST'])
@@ -342,99 +334,3 @@ def clinical_plan_for_diagnosis(request):
         'treatment_plan': plan,
         'patient_summary': summary,
     }, status=status.HTTP_200_OK)
-
-
-# ----- Twilio Voice: inbound call + recording callback -----
-from django.http import HttpResponse
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
-import requests
-
-
-@require_http_methods(["GET", "POST"])
-@csrf_exempt
-def twilio_voice_incoming(request):
-    """
-    Twilio webhook for incoming call to the Twilio number.
-    Returns TwiML: say welcome + record patient message (name, age, reason for visit).
-    When recording ends, Twilio POSTs to voice/recording-callback/ with RecordingUrl.
-    """
-    base = getattr(settings, "TWILIO_VOICE_BASE_URL", "").strip() or request.build_absolute_uri("/").rstrip("/")
-    if base.endswith("/api"):
-        base = base
-    else:
-        base = request.build_absolute_uri("/api/").rstrip("/")
-    recording_callback = f"{base}/voice/recording-callback/"
-
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Say voice="alice">Welcome to the patient intake line. Please state your full name, age, and the reason for your visit after the beep. You have 90 seconds.</Say>
-    <Record maxLength="90" playBeep="true" action="{recording_callback}" />
-</Response>"""
-    return HttpResponse(twiml, content_type="application/xml")
-
-
-@require_http_methods(["GET", "POST"])
-@csrf_exempt
-def twilio_recording_callback(request):
-    """
-    Twilio calls this when recording is ready (RecordingUrl in POST).
-    Download the recording, run Gemini intake_from_audio, create RecordedPatient with source=twilio.
-    """
-    recording_url = (request.POST.get("RecordingUrl") or request.GET.get("RecordingUrl") or "").strip()
-    if not recording_url:
-        return HttpResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type="application/xml")
-
-    account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "") or ""
-    auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "") or ""
-    if not account_sid or not auth_token:
-        return HttpResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type="application/xml")
-
-    try:
-        resp = requests.get(
-            recording_url,
-            auth=(account_sid, auth_token),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        audio_bytes = resp.content
-    except Exception:
-        return HttpResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type="application/xml")
-
-    mime = "audio/mpeg"
-    if recording_url.lower().endswith(".wav"):
-        mime = "audio/wav"
-    elif recording_url.lower().endswith(".mp3") or "mp3" in (resp.headers.get("Content-Type") or ""):
-        mime = "audio/mpeg"
-
-    result = intake_from_audio(audio_bytes, mime_type=mime, client_transcript="")
-    if result.get("error") and not result.get("transcript") and not result.get("document"):
-        return HttpResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', content_type="application/xml")
-
-    external_id = _generate_patient_id()
-    name = (result.get("name") or "").strip() or "Unknown"
-    age = (result.get("age") or "").strip()
-    from django.utils import timezone
-    payload = {
-        "transcript": result.get("transcript", ""),
-        "document": result.get("document", ""),
-        "report": result.get("report", ""),
-        "vitals": result.get("vitals", {}),
-        "symptoms": result.get("symptoms", []),
-        "diagnosis": result.get("diagnosis", ""),
-        "possible_diagnoses": result.get("possible_diagnoses", []),
-        "treatment_plan": result.get("treatment_plan", []),
-        "createdAt": timezone.now().isoformat(),
-    }
-    RecordedPatient.objects.create(
-        external_id=external_id,
-        name=name,
-        age=age,
-        source="twilio",
-        payload=payload,
-    )
-    return HttpResponse(
-        '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Thank you. Your information has been saved. Goodbye.</Say><Hangup/></Response>',
-        content_type="application/xml",
-    )
