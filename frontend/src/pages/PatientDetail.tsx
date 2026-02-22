@@ -1,7 +1,8 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, Download, FileJson, Stethoscope, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { api } from '../api'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 
@@ -21,7 +22,7 @@ function loadPatients(): StoredPatient[] {
   }
 }
 
-/** Remove a patient from storage. Call after confirming delete. */
+/** Remove a patient from local storage. Call after confirming delete. */
 export function deletePatient(id: string): void {
   const next = loadPatients().filter((p) => p.id !== id)
   localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
@@ -30,9 +31,19 @@ export function deletePatient(id: string): void {
 export default function PatientDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const patient = useMemo(() => {
-    const list = loadPatients()
-    return list.find((p) => p.id === id) || null
+  const [patient, setPatient] = useState<StoredPatient | null>(() => {
+    if (!id) return null
+    return loadPatients().find((p) => p.id === id) || null
+  })
+
+  useEffect(() => {
+    if (!id) return
+    api.getRecordedPatient(id)
+      .then((data) => setPatient({ ...data, id: (data.id as string) || id } as StoredPatient))
+      .catch(() => {
+        const fromLocal = loadPatients().find((p) => p.id === id) || null
+        setPatient(fromLocal)
+      })
   }, [id])
 
   const handleDownloadJson = () => {
@@ -54,17 +65,18 @@ export default function PatientDetail() {
     if (!patient || !id) return
     if (!window.confirm(`Delete patient ${patient.name} (ID ${id})? This cannot be undone.`)) return
     deletePatient(id)
+    api.deleteRecordedPatient(id).catch(() => {})
     toast.success('Patient removed.')
-    navigate('/patients', { replace: true })
+    navigate('/consultation', { replace: true })
   }
 
   if (!patient) {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6">
         <p className="text-neutral-600 font-medium">Patient not found.</p>
-        <Link to="/patients" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
+        <Link to="/consultation" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
           <ArrowLeft size={18} />
-          Back to All Patients
+          Back to Consultation
         </Link>
       </div>
     )
@@ -75,11 +87,11 @@ export default function PatientDetail() {
       <header className="sticky top-0 z-10 h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between print:flex">
         <div className="flex items-center gap-4">
           <Link
-            to="/patients"
+            to="/consultation"
             className="print:hidden flex items-center gap-2 text-neutral-600 hover:text-red-600 font-bold text-sm"
           >
             <ArrowLeft size={20} />
-            Back to All Patients
+            Back to Consultation
           </Link>
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white">

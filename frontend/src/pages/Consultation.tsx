@@ -65,7 +65,6 @@ export default function Consultation() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [now, setNow] = useState(() => new Date())
-  const [documentText, setDocumentText] = useState('')
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
   const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(null)
@@ -74,6 +73,7 @@ export default function Consultation() {
   const [patientSummaryForSelection, setPatientSummaryForSelection] = useState<string | null>(null)
   const [meds, setMeds] = useState<string[]>([])
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
+  const [patientsLoaded, setPatientsLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -123,20 +123,62 @@ export default function Consultation() {
       name,
       age,
       createdAt: new Date().toISOString(),
-      ...result,
+      transcript: result.transcript,
+      document: result.document,
+      report: result.report,
+      vitals: result.vitals,
+      symptoms: result.symptoms,
+      diagnosis: result.diagnosis,
+      possible_diagnoses: result.possible_diagnoses,
+      treatment_plan: result.treatment_plan,
     }
-    setPatients((prev) => {
-      const next = [patient, ...prev].slice(0, 50)
-      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    toast.success(`Patient recorded — ID ${id}`)
+    api.createRecordedPatient(patient as unknown as Record<string, unknown>)
+      .then((created) => {
+        const fromServer = { ...created, id: (created.id as string) || id } as StoredPatient
+        setPatients((prev) => {
+          const next = [fromServer, ...prev.filter((p) => p.id !== fromServer.id)].slice(0, 50)
+          localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+          return next
+        })
+        toast.success(`Patient recorded — ID ${fromServer.id}`)
+      })
+      .catch(() => {
+        setPatients((prev) => {
+          const next = [patient, ...prev].slice(0, 50)
+          localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+          return next
+        })
+        toast.success(`Patient recorded — ID ${id}`)
+      })
   }, [])
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(tick)
   }, [])
+
+  useEffect(() => {
+    if (patientsLoaded) return
+    setPatientsLoaded(true)
+    api.listRecordedPatients()
+      .then((list) => {
+        const arr = Array.isArray(list) ? list : (list as { results?: unknown[] })?.results ?? []
+        const items = (arr as StoredPatient[]).map((p) => ({
+          ...p,
+          id: p.id ?? '',
+          name: p.name ?? 'Unknown',
+          age: p.age ?? '',
+          createdAt: p.createdAt ?? '',
+        }))
+        if (items.length > 0) {
+          setPatients(items)
+          try {
+            localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(items))
+          } catch {}
+        }
+      })
+      .catch(() => {})
+  }, [patientsLoaded])
 
   const scrollToBottom = () => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   useEffect(() => { scrollToBottom() }, [transcript])
@@ -183,8 +225,9 @@ export default function Consultation() {
         recognition.lang = 'en-US'
         recognition.onresult = (e: SpeechRecognitionEvent) => {
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (e.results[i].isFinal) {
-              const t = e.results[i][0].transcript
+            const item = e.results[i]
+            if (item?.isFinal) {
+              const t = item[0]?.transcript
               if (t) speechTranscriptRef.current = (speechTranscriptRef.current + ' ' + t).trim()
             }
           }
@@ -276,12 +319,15 @@ export default function Consultation() {
     e.preventDefault()
     e.stopPropagation()
     if (!window.confirm('Remove this patient from the list?')) return
-    setPatients((prev) => {
-      const next = prev.filter((p) => p.id !== patientId)
-      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    toast.success('Patient removed.')
+    const removeFromState = () => {
+      setPatients((prev) => {
+        const next = prev.filter((p) => p.id !== patientId)
+        localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+        return next
+      })
+      toast.success('Patient removed.')
+    }
+    api.deleteRecordedPatient(patientId).then(removeFromState).catch(removeFromState)
   }
 
   const summaryForPatient = useMemo(() => {
@@ -502,31 +548,60 @@ export default function Consultation() {
                 to="/patients"
                 className="mt-3 flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-[12px] transition-all"
               >
-                View All Patients
+                View All Documentation & Stored Patient Data
               </Link>
+            </div>
+          )}
+          {patients.length > 0 && (
+            <div className="shrink-0">
+              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2 px-1">Three most recent medical summaries</h3>
+              <div className="flex flex-col gap-2">
+                {patients.slice(0, 3).map((p) => {
+                  const doc = (p as { document?: string }).document ?? (p as { payload?: { document?: string } }).payload?.document ?? ''
+                  const snippet = typeof doc === 'string' && doc.trim() ? doc.trim().slice(0, 100) + (doc.length > 100 ? '…' : '') : 'No summary yet.'
+                  return (
+                    <Link
+                      key={p.id}
+                      to={`/patient/${p.id}`}
+                      className="block p-3 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all text-left"
+                    >
+                      <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
+                      <p className="text-[11px] text-neutral-500 mt-1 line-clamp-2">{snippet}</p>
+                      <p className="text-[10px] text-red-600 font-bold mt-2">View full record →</p>
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
           )}
           <div className="flex-1 min-h-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
-              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
+              <h3 className="text-sm font-bold text-neutral-800">Identified Symptoms</h3>
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
-              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      <ClipboardList size={80} />
-                    </div>
-                    {planForDiagnosisLoading ? (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative flex items-center gap-2">
-                        <Loader2 size={16} className="animate-spin shrink-0" />
-                        Updating summary for selected diagnosis...
-                      </p>
-                    ) : patientSummaryForSelection ? (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{patientSummaryForSelection}</p>
-                    ) : (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
-                    )}
-              </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {symptoms.length > 0 ? (
+                    symptoms.map((tag, i) => (
+                      <motion.span
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        key={`symptom-${i}-${String(tag).slice(0, 20)}`}
+                        className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
+                      >
+                        {tag}
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                      </motion.span>
+                    ))
+                  ) : (
+                    <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
+                  )}
+                  {transcript.length > 0 && !isRecording && !isProcessing && (
+                    <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-red-400 hover:text-red-600 transition-all">
+                      <Plus size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -540,35 +615,22 @@ export default function Consultation() {
           <div className="overflow-auto px-6 py-4">
             <div className="flex flex-wrap gap-x-8 gap-y-6">
               <section className="min-w-[200px] flex-1">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2 text-neutral-800">
-                        <Activity size={16} className="text-red-600" strokeWidth={3} />
-                        <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
-                      </div>
-                      <button type="button" className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">Edit</button>
-                    </div>
-                    <div className="flex flex-wrap gap-2.5">
-                      {symptoms.length > 0 ? (
-                        symptoms.map((tag, i) => (
-                          <motion.span
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            key={`symptom-${i}-${String(tag).slice(0, 20)}`}
-                            className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
-                          >
-                            {tag}
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                          </motion.span>
-                        ))
-                      ) : (
-                        <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
-                      )}
-                      {transcript.length > 0 && !isRecording && !isProcessing && (
-                        <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-red-400 hover:text-red-600 transition-all">
-                          <Plus size={14} />
-                        </button>
-                      )}
-                    </div>
+                <div className="flex items-center gap-2 mb-4 text-neutral-800">
+                  <ClipboardList size={16} className="text-red-600" strokeWidth={3} />
+                  <h4 className="text-sm font-bold tracking-tight">Summary for Patient</h4>
+                </div>
+                <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden">
+                  {planForDiagnosisLoading ? (
+                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative flex items-center gap-2">
+                      <Loader2 size={16} className="animate-spin shrink-0" />
+                      Updating summary for selected diagnosis...
+                    </p>
+                  ) : patientSummaryForSelection ? (
+                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{patientSummaryForSelection}</p>
+                  ) : (
+                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
+                  )}
+                </div>
               </section>
               <section className="min-w-[200px] flex-1">
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">

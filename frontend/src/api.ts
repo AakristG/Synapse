@@ -14,7 +14,9 @@ async function request(path: string, options: RequestInit = {}): Promise<Record<
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json'
 
   const res = await fetch(url, { ...options, headers, credentials: 'include' })
-  const data = await res.json().catch(() => ({})) as Record<string, unknown>
+  const data = (res.status === 204 || res.headers.get('Content-Length') === '0')
+    ? {} as Record<string, unknown>
+    : (await res.json().catch(() => ({})) as Record<string, unknown>)
   if (!res.ok) throw new Error((data.detail as string) || (data.message as string) || res.statusText)
   return data
 }
@@ -46,4 +48,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ diagnosis, symptoms, document }),
     }),
+  listRecordedPatients: () => request('/recorded-patients/'),
+  getRecordedPatient: (id: string) => request(`/recorded-patients/${encodeURIComponent(id)}/`),
+  createRecordedPatient: (data: Record<string, unknown>) =>
+    request('/recorded-patients/create/', { method: 'POST', body: JSON.stringify(data) }),
+  deleteRecordedPatient: (id: string) =>
+    request(`/recorded-patients/${encodeURIComponent(id)}/`, { method: 'DELETE' }),
 }

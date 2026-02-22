@@ -64,6 +64,13 @@ API runs at **http://127.0.0.1:8000**. Endpoints:
 
 **Gemini audio extraction**: set `GEMINI_API_KEY` in the environment (or in Django settings) so the `/api/audio/extract/` endpoint can call the Gemini API.
 
+**Twilio voice (patient intake by phone)**  
+When a patient calls your Twilio number, they hear a prompt and can leave a voice message (name, age, reason for visit). The recording is transcribed and analyzed by Gemini and stored as a **recorded patient** (same list physicians see in Synapse).
+
+1. Set in `.env` or environment: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (e.g. +18776119923).
+2. Expose your backend (e.g. ngrok: `ngrok http 8000`) and set the Twilio phone number’s **Voice** webhook to: `https://your-public-host/api/voice/incoming/` (HTTP POST).
+3. Calls hit `/api/voice/incoming/` (TwiML: say + record). When the recording finishes, Twilio POSTs to `/api/voice/recording-callback/`; the backend downloads the file, runs Gemini intake, and creates a `RecordedPatient` with `source=twilio`.
+
 ### 2. Frontend (React)
 
 ```bash

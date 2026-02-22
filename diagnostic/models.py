@@ -116,3 +116,20 @@ class EMRExport(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class RecordedPatient(models.Model):
+    """Patient record from Synapse (consultation) or Twilio (inbound call). Shown in physician's recorded patients list."""
+    external_id = models.CharField(max_length=64, unique=True, db_index=True)
+    name = models.CharField(max_length=255, default='Unknown')
+    age = models.CharField(max_length=32, blank=True)
+    source = models.CharField(
+        max_length=16,
+        choices=[('synapse', 'Synapse'), ('twilio', 'Twilio')],
+        default='synapse',
+    )
+    payload = models.JSONField(default=dict, blank=True)  # full extraction: transcript, document, symptoms, etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
