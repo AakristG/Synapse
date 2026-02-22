@@ -18,10 +18,12 @@ import {
   ChevronRight,
   Plus,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import axxessLogo from '../assets/axxess-logo.png'
 import { toast } from 'sonner'
 import { api } from '../api'
+import { generatePatientId, getStoredPatients, savePatients } from '../utils/patients'
 
 export default function Consultation() {
   const [isRecording, setIsRecording] = useState(false)
@@ -33,6 +35,7 @@ export default function Consultation() {
   const [diagnosis, setDiagnosis] = useState([])
   const [meds, setMeds] = useState([])
   const [documentText, setDocumentText] = useState('')
+  const [patients, setPatients] = useState(() => getStoredPatients())
   const fileInputRef = useRef(null)
   const transcriptEndRef = useRef(null)
   const mediaRecorderRef = useRef(null)
@@ -61,6 +64,23 @@ export default function Consultation() {
     if (result.document) {
       setDocumentText(result.document)
     }
+    // Add new patient record (name, age, 10-digit ID, full data)
+    const id = generatePatientId()
+    const name = (result.name || '').trim() || 'Unknown'
+    const age = (result.age || '').trim() || '—'
+    const newPatient = {
+      id,
+      name,
+      age,
+      createdAt: new Date().toISOString(),
+      data: { ...result },
+    }
+    setPatients((prev) => {
+      const next = [newPatient, ...prev]
+      savePatients(next)
+      return next
+    })
+    toast.success(`Patient recorded — ID ${id}`)
   }, [])
 
   useEffect(() => {
@@ -342,10 +362,28 @@ export default function Consultation() {
         </section>
 
         <aside className="flex-1 min-w-0 flex gap-4 flex-col min-h-0">
+          {patients.length > 0 && (
+            <div className="shrink-0">
+              <h3 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-3">Recorded patients</h3>
+              <div className="flex flex-col gap-2 max-h-40 overflow-auto">
+                {patients.map((p) => (
+                  <Link
+                    key={p.id}
+                    to={`/patient/${p.id}`}
+                    className="block p-4 bg-white border border-neutral-200 rounded-xl shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left"
+                  >
+                    <p className="font-bold text-neutral-800 truncate">{p.name}</p>
+                    <p className="text-xs text-neutral-500 font-medium">Age: {p.age}</p>
+                    <p className="text-xs font-mono font-bold text-blue-600 mt-1.5">ID: {p.id}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="shrink-0 flex items-center justify-between gap-4">
             <div>
-              <h3 className="font-bold text-base text-neutral-800">Maria Santos</h3>
-              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wide">ID: #1001 • 40y Female</p>
+              <h3 className="font-bold text-base text-neutral-800">Current session</h3>
+              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wide">Record to add a patient</p>
             </div>
             <button
               onClick={resetSession}
