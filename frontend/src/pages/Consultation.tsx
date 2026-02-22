@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback, ChangeEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback, useMemo, ChangeEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Mic,
   Square,
@@ -7,19 +7,19 @@ import {
   ClipboardList,
   Stethoscope,
   Pill,
-  Globe,
   CheckCircle2,
   Trash2,
   Upload,
   FileAudio,
   Loader2,
-  Send,
   Zap,
   Clock,
   ChevronRight,
   Plus,
   User,
+  LogOut,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { api } from '../api'
@@ -39,6 +39,8 @@ interface ExtractionResult {
   age?: string
   symptoms?: string[]
   diagnosis?: string
+  possible_diagnoses?: string[]
+  treatment_plan?: string[]
   [key: string]: unknown
 }
 
@@ -55,6 +57,8 @@ function loadPatients(): StoredPatient[] {
 }
 
 export default function Consultation() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -63,7 +67,6 @@ export default function Consultation() {
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
   const [meds, setMeds] = useState<string[]>([])
-  const [documentText, setDocumentText] = useState('')
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
@@ -84,8 +87,23 @@ export default function Consultation() {
     if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
       setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
     }
-    if (result.diagnosis) setDiagnosis([result.diagnosis])
-    if (result.document) setDocumentText(result.document)
+    // Diagnosis: primary (from transcript) + Gemini's list of possible diagnoses to consider (from Synapse response)
+    const primary = result.diagnosis ? [result.diagnosis] : []
+    const possible = Array.isArray(result.possible_diagnoses)
+      ? result.possible_diagnoses.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+      : []
+    const allDiagnoses = [...primary]
+    for (const d of possible) {
+      if (!allDiagnoses.some((x) => x.trim().toLowerCase() === d.trim().toLowerCase())) {
+        allDiagnoses.push(d.trim())
+      }
+    }
+    if (allDiagnoses.length > 0) setDiagnosis(allDiagnoses)
+    // Treatment & Plan: steps from Gemini (Synapse + primary diagnosis)
+    const plan = Array.isArray(result.treatment_plan)
+      ? result.treatment_plan.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+      : []
+    if (plan.length > 0) setMeds(plan.map((s) => s.trim()))
     const id = generatePatientId()
     const name = (result.name || '').trim() || 'Unknown'
     const age = (result.age || '').trim() || ''
@@ -209,7 +227,6 @@ export default function Consultation() {
     setSymptoms([])
     setDiagnosis([])
     setMeds([])
-    setDocumentText('')
   }
 
   const removePatient = (patientId: string, e: React.MouseEvent) => {
@@ -224,20 +241,30 @@ export default function Consultation() {
     toast.success('Patient removed.')
   }
 
-  const handleSendSummary = () => {
-    toast.promise(new Promise((resolve) => setTimeout(resolve, 1500)), {
-      loading: 'Generating clinical summary...',
-      success: 'Clinical summary generated.',
-      error: 'Failed to generate summary.',
-    })
-  }
+  const summaryForPatient = useMemo(() => {
+    const hasAny = symptoms.length > 0 || diagnosis.length > 0 || meds.length > 0
+    if (!hasAny) {
+      return 'Record or upload audio to generate a visit summary. After your note is processed, a plain-language summary of your symptoms, diagnosis, and treatment plan will appear here.'
+    }
+    const parts: string[] = []
+    if (symptoms.length > 0) {
+      parts.push(`What you reported: ${symptoms.join(', ')}.`)
+    }
+    if (diagnosis.length > 0) {
+      parts.push(`What we're considering: ${diagnosis.join(', ')}.`)
+    }
+    if (meds.length > 0) {
+      parts.push(`Your plan: ${meds.map((s, i) => `${i + 1}. ${s}`).join(' ')}`)
+    }
+    return parts.join(' ')
+  }, [symptoms, diagnosis, meds])
 
   return (
     <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-            <img src="/assets/axxess-logo.png" alt="Axxess" className="w-full h-full object-contain rounded-xl" />
+          <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
+            <img src="/Users/lanemeeks/Documents/GitHub/Axxess-2026/frontend/src/assets/axxess-logo.png" alt="Axxess" className="w-full h-full object-contain rounded-xl" />
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
@@ -246,6 +273,14 @@ export default function Consultation() {
             <Clock size={14} />
             {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </div>
+          <button
+            type="button"
+            onClick={() => { logout(); navigate('/login', { replace: true }) }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-all"
+          >
+            <LogOut size={18} />
+            Log out
+          </button>
         </div>
       </header>
 
@@ -253,7 +288,7 @@ export default function Consultation() {
         <section className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden relative min-h-0">
           <div className="px-8 py-5 border-b border-neutral-100 flex items-center justify-between bg-white z-10">
             <div className="flex items-center gap-4">
-              <div className={`p-2 rounded-lg ${isRecording ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+              <div className={`p-2 rounded-lg ${isRecording ? 'bg-red-50 text-red-600' : 'bg-red-50 text-red-600'}`}>
                 <Mic size={20} />
               </div>
               <div>
@@ -275,7 +310,7 @@ export default function Consultation() {
                 <button
                   onClick={startSession}
                   disabled={isUploading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50 group"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 group"
                 >
                   <Zap size={18} className="group-hover:animate-pulse" strokeWidth={2.5} />
                   Start Listening
@@ -317,8 +352,8 @@ export default function Consultation() {
               {(isUploading || isProcessing) && (
                 <div key="processing" className="min-h-[200px] flex flex-col items-center justify-center py-8">
                   <div className="relative">
-                    <Loader2 size={48} className="animate-spin text-blue-200" />
-                    <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600 animate-pulse" />
+                    <Loader2 size={48} className="animate-spin text-red-200" />
+                    <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-pulse" />
                   </div>
                   <p className="mt-4 font-bold text-neutral-600 tracking-tight">
                     {isProcessing ? 'Creating transcript from recording...' : 'Processing audio...'}
@@ -337,7 +372,7 @@ export default function Consultation() {
                     <div
                       className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
                         line.speaker === 'Clinician'
-                          ? 'bg-blue-600 text-white rounded-tr-none shadow-xl shadow-blue-100/50'
+                          ? 'bg-red-600 text-white rounded-tr-none shadow-xl shadow-red-100/50'
                           : line.speaker === 'Synapse'
                             ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
                             : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
@@ -345,7 +380,7 @@ export default function Consultation() {
                     >
                       <div
                         className={`absolute top-0 ${line.speaker === 'Clinician' ? '-right-3' : '-left-3'} w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                          line.speaker === 'Clinician' ? 'bg-blue-700 text-blue-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
+                          line.speaker === 'Clinician' ? 'bg-red-700 text-red-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
                         }`}
                       >
                         {line.speaker === 'Synapse' ? 'S' : line.speaker.charAt(0)}
@@ -385,10 +420,6 @@ export default function Consultation() {
 
         <aside className="flex-1 min-w-0 flex gap-4 flex-col min-h-0">
           <div className="shrink-0 flex items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-base text-neutral-800">Maria Santos</h3>
-              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wide">ID: #1001 • 40y Female</p>
-            </div>
             <button
               onClick={resetSession}
               className="shrink-0 py-2.5 px-4 border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-100 hover:bg-red-50 rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
@@ -404,19 +435,19 @@ export default function Consultation() {
                 {patients.map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center gap-2 p-3 bg-white border border-neutral-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
+                    className="flex items-center gap-2 p-3 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all group"
                   >
                     <Link
                       to={`/patient/${p.id}`}
                       className="flex items-center gap-3 min-w-0 flex-1"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shrink-0 group-hover:bg-blue-200">
+                      <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0 group-hover:bg-red-200">
                         <User size={20} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
                         <p className="text-xs text-neutral-500">
-                          {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-blue-600">#{p.id}</span>
+                          {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-red-600">#{p.id}</span>
                         </p>
                       </div>
                       <ChevronRight size={16} className="text-neutral-300 shrink-0" />
@@ -443,10 +474,10 @@ export default function Consultation() {
               <section>
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2 text-neutral-800">
-                        <Activity size={16} className="text-blue-600" strokeWidth={3} />
+                        <Activity size={16} className="text-red-600" strokeWidth={3} />
                         <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
                       </div>
-                      <button type="button" className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">Edit</button>
+                      <button type="button" className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">Edit</button>
                     </div>
                     <div className="flex flex-wrap gap-2.5">
                       {symptoms.length > 0 ? (
@@ -458,14 +489,14 @@ export default function Consultation() {
                             className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
                           >
                             {tag}
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                           </motion.span>
                         ))
                       ) : (
                         <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
                       )}
                       {transcript.length > 0 && !isRecording && !isProcessing && (
-                        <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-blue-400 hover:text-blue-600 transition-all">
+                        <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-red-400 hover:text-red-600 transition-all">
                           <Plus size={14} />
                         </button>
                       )}
@@ -473,8 +504,8 @@ export default function Consultation() {
               </section>
               <section>
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
-                  <Stethoscope size={16} className="text-blue-600" strokeWidth={3} />
-                  <h4 className="text-sm font-bold tracking-tight">Diagnosis (ICD-10-CM)</h4>
+                  <Stethoscope size={16} className="text-red-600" strokeWidth={3} />
+                  <h4 className="text-sm font-bold tracking-tight">Possible Diagnosis (ICD-10-CM)</h4>
                 </div>
                     <div className="space-y-3">
                       {diagnosis.length > 0 ? (
@@ -483,16 +514,17 @@ export default function Consultation() {
                             initial={{ x: 10, opacity: 0 }}
                             animate={{ x: 0, opacity: 1 }}
                             key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
-                            className="p-4 bg-blue-50 border border-blue-100 rounded-2xl shadow-sm group hover:bg-blue-100 transition-all"
+                            className="p-4 bg-red-50 border border-red-100 rounded-2xl shadow-sm group hover:bg-red-100 transition-all"
                           >
                             <div className="flex items-start justify-between">
-                              <span className="text-xs font-bold text-blue-900 leading-tight">{d}</span>
-                              <div className="bg-blue-600 text-white p-1 rounded-lg">
+                              <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
+                              <div className="bg-red-600 text-white p-1 rounded-lg">
                                 <CheckCircle2 size={14} fill="currentColor" />
                               </div>
                             </div>
-                            <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
-                              <Zap size={10} fill="currentColor" /> Extracted from Transcript
+                            <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
+                              <Zap size={10} fill="currentColor" />
+                              {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
                             </p>
                           </motion.div>
                         ))
@@ -505,7 +537,7 @@ export default function Consultation() {
               </section>
               <section>
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
-                  <Pill size={16} className="text-blue-600" strokeWidth={3} />
+                  <Pill size={16} className="text-red-600" strokeWidth={3} />
                   <h4 className="text-sm font-bold tracking-tight">Treatment & Plan</h4>
                 </div>
                     <div className="space-y-3">
@@ -515,14 +547,15 @@ export default function Consultation() {
                             initial={{ y: 5, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             key={`med-${i}-${String(m).slice(0, 20)}`}
-                            className="p-4 bg-neutral-50 border border-neutral-100 rounded-2xl text-[13px] font-bold text-neutral-700 flex items-center gap-4 hover:border-blue-200 transition-all"
+                            className="p-4 bg-neutral-50 border border-neutral-100 rounded-2xl text-[13px] font-bold text-neutral-700 flex items-center gap-4 hover:border-red-200 transition-all"
                           >
-                            <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-neutral-100 flex items-center justify-center text-blue-600">
+                            <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-neutral-100 flex items-center justify-center text-red-600">
                               <Pill size={16} />
                             </div>
                             <div className="flex-1">
+                              <span className="text-neutral-500 font-medium mr-1.5">{i + 1}.</span>
                               {m}
-                              <p className="text-[10px] text-neutral-400 font-medium">As discussed during visit</p>
+                              <p className="text-[10px] text-neutral-400 font-medium mt-1">From Synapse (treatment plan)</p>
                             </div>
                           </motion.div>
                         ))
@@ -536,65 +569,16 @@ export default function Consultation() {
 
           <div className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm min-h-0 overflow-hidden">
             <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
-              <h3 className="text-sm font-bold text-neutral-800">Patient Recs</h3>
+              <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
             </div>
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 min-h-0 overflow-auto px-6 py-4 space-y-4">
+              <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
               <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                       <ClipboardList size={80} />
                     </div>
-                    <h4 className="text-sm font-bold mb-3 flex items-center gap-2 relative">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      Patient Recovery Guide
-                    </h4>
-                    {documentText ? (
-                      <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{documentText}</p>
-                    ) : (
-                      <>
-                        <p className="text-[13px] leading-relaxed opacity-90 font-medium relative">
-                          Record or upload audio to generate a clinical document from your dictation.
-                        </p>
-                        <div className="mt-4 pt-4 border-t border-white/10 relative">
-                          <p className="text-[10px] uppercase font-bold text-blue-400 tracking-widest mb-2">From your recording</p>
-                          <p className="text-xs italic opacity-80">Vitals, symptoms, diagnosis, and recovery plan will appear here.</p>
-                        </div>
-                      </>
-                    )}
+                    <p className="text-[13px] leading-relaxed opacity-90 font-medium relative whitespace-pre-wrap">{summaryForPatient}</p>
               </div>
-              <div className="space-y-3">
-                <h5 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Follow-up Tasks</h5>
-                    <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-neutral-100 shadow-sm hover:border-blue-200 transition-all">
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
-                        <Stethoscope size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[13px] font-bold text-neutral-800">Chest X-Ray Imaging</p>
-                        <p className="text-[11px] text-neutral-500 font-medium">Tomorrow, Feb 22 at 10:00 AM</p>
-                      </div>
-                      <ChevronRight size={16} className="text-neutral-300" />
-                    </div>
-                <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-neutral-100 shadow-sm hover:border-blue-200 transition-all">
-                  <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-600 border border-green-100">
-                    <Globe size={20} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-[13px] font-bold text-neutral-800">Telehealth Follow-up</p>
-                    <p className="text-[11px] text-neutral-500 font-medium">Scheduled for next Friday</p>
-                  </div>
-                  <ChevronRight size={16} className="text-neutral-300" />
-                </div>
-              </div>
-              </div>
-              <div className="shrink-0 px-6 py-4 border-t border-neutral-100 bg-white">
-                <button
-                  type="button"
-                  onClick={handleSendSummary}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-[13px] flex items-center justify-center gap-2 hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all active:scale-[0.98] group"
-                >
-                  <Send size={18} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                  Generate Clinical Summary
-                </button>
               </div>
             </div>
           </div>

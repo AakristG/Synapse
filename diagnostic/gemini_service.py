@@ -27,6 +27,8 @@ def _empty_result(error_msg=""):
         "vitals": {},
         "symptoms": [],
         "diagnosis": "",
+        "possible_diagnoses": [],
+        "treatment_plan": [],
         "document": "",
         "transcript": "",
     }
@@ -90,12 +92,14 @@ Extract only when clearly stated or clearly intended in the transcript:
 - vitals: {} unless specific vitals (e.g. BP, HR, temp) are explicitly said — use standard labels and units
 - symptoms: [] unless specific symptoms are explicitly said — use correctly spelled medical terms
 - diagnosis: "" unless assessment/diagnosis is explicitly said — use correct spelling (e.g. ICD-style or standard terms)
+- possible_diagnoses: array of 3 to 7 differential diagnoses the clinician should consider, based on the transcript and the clinical picture. Use standard medical/ICD-style terms. Include the primary diagnosis if stated, plus other likely alternatives (rule-outs, differentials). Order by likelihood or importance. Do not invent; base only on what the transcript and context support.
+- treatment_plan: REQUIRED. You MUST always return a non-empty array of 4 to 12 concrete steps. Never return an empty array. Base steps on the clinical document (Synapse-style summary) and the primary diagnosis. Each step is one short, actionable sentence (e.g. "Start lisinopril 10 mg PO daily for BP", "Order HbA1c and BMP", "Follow up in 2 weeks", "Patient to monitor blood pressure at home"). Order logically: immediate interventions and medications first, then labs/imaging, then follow-up and patient instructions. If the transcript is minimal, still provide at least 4 reasonable steps (e.g. "Follow up in 2 weeks", "Return if symptoms worsen", "Continue current medications as prescribed", "Patient to monitor symptoms"). Use standard medical terminology and correct spelling.
 
 Document: one short paragraph with ONLY information from the transcript, properly spelled and in clear clinical language. Use "Not stated" for any category not mentioned.
 """ + context_line + """
 Transcript to evaluate:
 """
-    full_prompt = prompt + "\n" + (transcript_text or "").strip() + "\n\nReturn ONLY a valid JSON object with exactly these keys (no markdown, no code fence): \"missing\": [], \"question\": null, \"name\": string, \"age\": string, \"report\": string, \"vitals\": object, \"symptoms\": array of strings, \"diagnosis\": string, \"document\": string. Return only the JSON."
+    full_prompt = prompt + "\n" + (transcript_text or "").strip() + "\n\nReturn ONLY a valid JSON object with exactly these keys (no markdown, no code fence): \"missing\": [], \"question\": null, \"name\": string, \"age\": string, \"report\": string, \"vitals\": object, \"symptoms\": array of strings, \"diagnosis\": string, \"possible_diagnoses\": array of strings, \"treatment_plan\": array of strings (REQUIRED: must have at least 4 items), \"document\": string. Return only the JSON."
 
     try:
         user_content = types.UserContent(full_prompt)
@@ -114,6 +118,22 @@ Transcript to evaluate:
 
     try:
         data = json.loads(text)
+        possible = data.get("possible_diagnoses")
+        if not isinstance(possible, list):
+            possible = []
+        possible = [str(p).strip() for p in possible if p and str(p).strip()]
+        treatment = data.get("treatment_plan")
+        if not isinstance(treatment, list):
+            treatment = []
+        treatment = [str(t).strip() for t in treatment if t and str(t).strip()]
+        # REQUIRED: ensure treatment_plan is never empty so the UI always shows steps
+        if not treatment:
+            treatment = [
+                "Follow up as clinically indicated.",
+                "Patient to return if symptoms worsen or new concerns arise.",
+                "Continue current medications as prescribed unless otherwise noted.",
+                "Reassess at next visit.",
+            ]
         return {
             "error": "",
             "missing": data.get("missing") or [],
@@ -124,6 +144,8 @@ Transcript to evaluate:
             "vitals": data.get("vitals") or {},
             "symptoms": data.get("symptoms") or [],
             "diagnosis": data.get("diagnosis") or "",
+            "possible_diagnoses": possible,
+            "treatment_plan": treatment,
             "document": data.get("document") or "",
         }
     except json.JSONDecodeError:
@@ -163,6 +185,8 @@ def intake_from_audio(
         "vitals": evaluated.get("vitals") or {},
         "symptoms": evaluated.get("symptoms") or [],
         "diagnosis": evaluated.get("diagnosis") or "",
+        "possible_diagnoses": evaluated.get("possible_diagnoses") or [],
+        "treatment_plan": evaluated.get("treatment_plan") or [],
         "document": evaluated.get("document") or "",
         "transcript": transcript,
     }
@@ -178,5 +202,7 @@ def extract_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> dic
         "vitals": result.get("vitals", {}),
         "symptoms": result.get("symptoms", []),
         "diagnosis": result.get("diagnosis", ""),
+        "possible_diagnoses": result.get("possible_diagnoses", []),
+        "treatment_plan": result.get("treatment_plan", []),
         "transcript": result.get("transcript", ""),
     }

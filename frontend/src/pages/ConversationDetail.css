@@ -134,7 +134,7 @@
   min-width: 4.5rem;
 }
 
-.transcript-list .role-patient { border-left: 3px solid #0ea5e9; padding-left: 0.5rem; }
+.transcript-list .role-patient { border-left: 3px solid #b91c1c; padding-left: 0.5rem; }
 .transcript-list .role-clinician { border-left: 3px solid #22c55e; padding-left: 0.5rem; }
 
 .note-grid {

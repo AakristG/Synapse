@@ -62,7 +62,7 @@ export default function PatientDetail() {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6">
         <p className="text-neutral-600 font-medium">Patient not found.</p>
-        <Link to="/consultation" className="mt-4 text-blue-600 font-bold flex items-center gap-2 hover:underline">
+        <Link to="/consultation" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
           <ArrowLeft size={18} />
           Back to Consultation
         </Link>
@@ -76,13 +76,13 @@ export default function PatientDetail() {
         <div className="flex items-center gap-4">
           <Link
             to="/consultation"
-            className="print:hidden flex items-center gap-2 text-neutral-600 hover:text-blue-600 font-bold text-sm"
+            className="print:hidden flex items-center gap-2 text-neutral-600 hover:text-red-600 font-bold text-sm"
           >
             <ArrowLeft size={20} />
             Back
           </Link>
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white">
+            <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white">
               <Stethoscope size={18} />
             </div>
             <div>
@@ -105,7 +105,7 @@ export default function PatientDetail() {
           <button
             type="button"
             onClick={handlePrintPdf}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700"
+            className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700"
           >
             <Download size={18} />
             Download PDF

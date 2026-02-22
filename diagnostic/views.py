@@ -212,7 +212,7 @@ def audio_extract(request):
         )
         if result.get('error') and not result.get('transcript') and not result.get('document'):
             return Response(
-                {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'document', 'transcript']}},
+                {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'possible_diagnoses', 'treatment_plan', 'document', 'transcript']}},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({
@@ -224,6 +224,8 @@ def audio_extract(request):
             'vitals': result.get('vitals', {}),
             'symptoms': result.get('symptoms', []),
             'diagnosis': result.get('diagnosis', ''),
+            'possible_diagnoses': result.get('possible_diagnoses', []),
+            'treatment_plan': result.get('treatment_plan', []),
             'document': result.get('document', ''),
             'transcript': result.get('transcript', ''),
             'error': result.get('error', ''),
