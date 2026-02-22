@@ -28,6 +28,7 @@ import type { StoredPatient } from './PatientDetail'
 import axxessLogo from '../assets/axxess-logo.png'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
+const CONSULTATION_SESSION_KEY = 'synapse_consultation_session'
 
 /** Browser SpeechRecognition instance (Web Speech API; not in all TS DOM libs) */
 type SpeechRecognitionInstance = InstanceType<NonNullable<typeof window.SpeechRecognition>> extends infer T ? T : { start(): void; stop(): void }
@@ -52,7 +53,7 @@ interface ExtractionResult {
 }
 
 const INITIAL_AI_MESSAGE =
-  'Ask me anything or please state the patient\'s name, age, and presenting symptoms to begin documentation.'
+  'Ask about data or please state the patient\'s name, age, and presenting symptoms to begin documentation.'
 
 function generatePatientId(): string {
   return String(Math.floor(1000000000 + Math.random() * 9000000000))
@@ -66,23 +67,68 @@ function loadPatients(): StoredPatient[] {
   }
 }
 
+interface ConsultationSession {
+  transcript: TranscriptLine[]
+  symptoms: string[]
+  diagnosis: string[]
+  selectedDiagnosis: string | null
+  treatmentPlanForSelection: string[] | null
+  patientSummaryForSelection: string | null
+  meds: string[]
+}
+
+function loadConsultationSession(): ConsultationSession | null {
+  try {
+    const raw = localStorage.getItem(CONSULTATION_SESSION_KEY)
+    if (!raw) return null
+    const s = JSON.parse(raw) as ConsultationSession
+    if (!s || typeof s !== 'object') return null
+    const hasContent =
+      (Array.isArray(s.transcript) && s.transcript.length > 1) ||
+      (Array.isArray(s.symptoms) && s.symptoms.length > 0) ||
+      (Array.isArray(s.diagnosis) && s.diagnosis.length > 0) ||
+      (Array.isArray(s.meds) && s.meds.length > 0)
+    if (!hasContent) return null
+    return {
+      transcript: Array.isArray(s.transcript) ? s.transcript : [],
+      symptoms: Array.isArray(s.symptoms) ? s.symptoms : [],
+      diagnosis: Array.isArray(s.diagnosis) ? s.diagnosis : [],
+      selectedDiagnosis: s.selectedDiagnosis != null ? s.selectedDiagnosis : null,
+      treatmentPlanForSelection: Array.isArray(s.treatmentPlanForSelection) ? s.treatmentPlanForSelection : null,
+      patientSummaryForSelection: s.patientSummaryForSelection != null ? s.patientSummaryForSelection : null,
+      meds: Array.isArray(s.meds) ? s.meds : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveConsultationSession(session: ConsultationSession): void {
+  try {
+    localStorage.setItem(CONSULTATION_SESSION_KEY, JSON.stringify(session))
+  } catch {
+    // ignore
+  }
+}
+
 export default function Consultation() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [transcript, setTranscript] = useState<TranscriptLine[]>(() => [
-    { speaker: 'Synapse', text: INITIAL_AI_MESSAGE },
-  ])
+  const [transcript, setTranscript] = useState<TranscriptLine[]>(() => {
+    const s = loadConsultationSession()
+    return s?.transcript?.length ? s.transcript : [{ speaker: 'Synapse', text: INITIAL_AI_MESSAGE }]
+  })
   const [now, setNow] = useState(() => new Date())
-  const [symptoms, setSymptoms] = useState<string[]>([])
-  const [diagnosis, setDiagnosis] = useState<string[]>([])
-  const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(null)
+  const [symptoms, setSymptoms] = useState<string[]>(() => loadConsultationSession()?.symptoms ?? [])
+  const [diagnosis, setDiagnosis] = useState<string[]>(() => loadConsultationSession()?.diagnosis ?? [])
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(() => loadConsultationSession()?.selectedDiagnosis ?? null)
   const [planForDiagnosisLoading, setPlanForDiagnosisLoading] = useState(false)
-  const [treatmentPlanForSelection, setTreatmentPlanForSelection] = useState<string[] | null>(null)
-  const [patientSummaryForSelection, setPatientSummaryForSelection] = useState<string | null>(null)
-  const [meds, setMeds] = useState<string[]>([])
+  const [treatmentPlanForSelection, setTreatmentPlanForSelection] = useState<string[] | null>(() => loadConsultationSession()?.treatmentPlanForSelection ?? null)
+  const [patientSummaryForSelection, setPatientSummaryForSelection] = useState<string | null>(() => loadConsultationSession()?.patientSummaryForSelection ?? null)
+  const [meds, setMeds] = useState<string[]>(() => loadConsultationSession()?.meds ?? [])
   const [patients, setPatients] = useState<StoredPatient[]>(() => loadPatients())
   const [typedMessage, setTypedMessage] = useState('')
   const [isSendingText, setIsSendingText] = useState(false)
@@ -144,36 +190,84 @@ export default function Consultation() {
       const symptomsList = Array.isArray(result.symptoms) ? result.symptoms : []
       const hasRequired = name && age && symptomsList.length > 0
       if (hasRequired) {
-        const id = generatePatientId()
-        const patient: StoredPatient = {
-          ...result,
-          id,
-          name,
-          age,
-          createdAt: new Date().toISOString(),
-          transcriptRecording: fullTranscriptLines,
-          symptoms: symptomsList,
-          diagnosis: result.diagnosis ?? '',
-          possible_diagnoses: possible.length > 0 ? possible : (Array.isArray(result.possible_diagnoses) ? result.possible_diagnoses : []),
-          treatment_plan: plan.length > 0 ? plan : (Array.isArray(result.treatment_plan) ? result.treatment_plan : []),
-          document: (result.document ?? '').trim(),
-          transcript: (result.transcript ?? '').trim(),
-        }
+        const normalizedName = name.toLowerCase()
+        const normalizedAge = age
+        const planArr = plan.length > 0 ? plan : (Array.isArray(result.treatment_plan) ? result.treatment_plan : [])
+        const possibleArr = possible.length > 0 ? possible : (Array.isArray(result.possible_diagnoses) ? result.possible_diagnoses : [])
+        const existing = patients.find(
+          (p) =>
+            (p.name ?? '').trim().toLowerCase() === normalizedName &&
+            (p.age ?? '').trim() === normalizedAge,
+        )
+        const newId = existing ? undefined : generatePatientId()
         setPatients((prev) => {
+          const match = prev.find(
+            (p) =>
+              (p.name ?? '').trim().toLowerCase() === normalizedName &&
+              (p.age ?? '').trim() === normalizedAge,
+          )
+          if (match) {
+            const updated: StoredPatient = {
+              ...match,
+              name,
+              age,
+              createdAt: match.createdAt,
+              transcriptRecording: fullTranscriptLines,
+              symptoms: symptomsList,
+              diagnosis: (result.diagnosis ?? match.diagnosis ?? '').trim(),
+              possible_diagnoses: possibleArr,
+              treatment_plan: planArr,
+              document: (result.document ?? match.document ?? '').trim(),
+              transcript: (result.transcript ?? '').trim(),
+            }
+            const next = [updated, ...prev.filter((p) => p.id !== match.id)]
+            try {
+              localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+            } catch {}
+            return next
+          }
+          const patient: StoredPatient = {
+            ...result,
+            id: newId!,
+            name,
+            age,
+            createdAt: new Date().toISOString(),
+            transcriptRecording: fullTranscriptLines,
+            symptoms: symptomsList,
+            diagnosis: result.diagnosis ?? '',
+            possible_diagnoses: possibleArr,
+            treatment_plan: planArr,
+            document: (result.document ?? '').trim(),
+            transcript: (result.transcript ?? '').trim(),
+          }
           const next = [patient, ...prev].slice(0, 50)
-          localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+          try {
+            localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+          } catch {}
           return next
         })
-        toast.success(`Patient recorded — ID ${id}`)
+        toast.success(existing ? `Patient updated — ID ${existing.id}` : `Patient recorded — ID ${newId}`)
       }
     },
-    [],
+    [patients],
   )
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(tick)
   }, [])
+
+  useEffect(() => {
+    saveConsultationSession({
+      transcript,
+      symptoms,
+      diagnosis,
+      selectedDiagnosis,
+      treatmentPlanForSelection,
+      patientSummaryForSelection,
+      meds,
+    })
+  }, [transcript, symptoms, diagnosis, selectedDiagnosis, treatmentPlanForSelection, patientSummaryForSelection, meds])
 
   const scrollToBottom = () => transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   useEffect(() => { scrollToBottom() }, [transcript])
@@ -333,6 +427,11 @@ export default function Consultation() {
   }, [typedMessage, transcript, patients, isProcessing, isRecording, isUploading, applyExtractionResult])
 
   const resetSession = () => {
+    try {
+      localStorage.removeItem(CONSULTATION_SESSION_KEY)
+    } catch {
+      // ignore
+    }
     setTranscript([{ speaker: 'Synapse', text: INITIAL_AI_MESSAGE }])
     setSymptoms([])
     setDiagnosis([])
@@ -376,7 +475,10 @@ export default function Consultation() {
     <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900 phase-in">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
-          <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
+          <img src={axxessLogo} alt="Axxess" className="h-8 w-auto object-contain" />
+          <span className="text-black font-medium">
+            Welcome, {user?.username ?? 'User'}
+          </span>
         </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">

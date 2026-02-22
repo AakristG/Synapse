@@ -67,8 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     api.me()
       .then((u) => {
-        setUser(u as User)
-        localStorage.setItem(USER_KEY, JSON.stringify(u))
+        const parsed = u as unknown as User
+        setUser(parsed)
+        localStorage.setItem(USER_KEY, JSON.stringify(parsed))
       })
       .catch(() => setToken(''))
       .finally(() => setLoading(false))

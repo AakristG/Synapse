@@ -93,10 +93,17 @@ def intake_from_text(
     patients_block = ""
     if patients_context and patients_context.strip():
         patients_block = f"""
-RECORDED PATIENTS (use this to answer when the physician asks about a specific patient's diagnosis, treatment, symptoms, or any recorded data):
+RECORDED PATIENTS (each has an "id" field — a 10-digit number; use it to look up that patient):
 {patients_context.strip()}
 
-If the physician's message is a question about a patient (e.g. "What is the diagnosis for John?", "Tell me about patient #123", "What's Maria's treatment plan?"), use the RECORDED PATIENTS data above to answer. Put your answer in the "document" field as a clear, short paragraph (e.g. "Patient John Doe (ID #123): Diagnosis is hypertension. Treatment plan includes..."). Set "question" to null and "missing" to [] in that case. If the message is not about looking up a patient, proceed with normal extraction.
+LOAD DATA FLOW (follow in this order):
+1) REQUEST TO LOAD DATA (no ID given yet): If the physician asks to load data, load a patient, view patient, get patient info, pull up a patient, show me a patient, open patient record, or similar, and has NOT provided a 10-digit patient ID in this message: You MUST set "question" to exactly ask for the 10-digit ID. Use wording like: "Please provide the 10-digit patient ID number so I can load that patient's data." Set "missing" to [], leave name/age/symptoms/diagnosis/treatment_plan empty (or []), and leave "document" empty or a single sentence that you are waiting for the ID. Do NOT guess an ID or use any patient from the list until the user gives the number.
+
+2) USER PROVIDES THE 10-DIGIT NUMBER: When the physician's message is or contains a 10-digit number (with or without dashes or spaces, e.g. "1234567890", "123-456-7890", "123 456 7890", "patient 123-456-7890", "ID is 9876-543210"), treat that as the patient ID. Normalize it by removing all dashes and spaces so you have exactly 10 digits, then look up that "id" in RECORDED PATIENTS (ids in the list are stored as 10 digits with no dashes). If found: put that patient's full data in "document" — include name, age, symptoms, diagnosis, possible_diagnoses, treatment_plan, document summary, and a brief transcript summary. Format clearly. Set "question" to null and "missing" to []. If NOT found: put in "document" that no recorded patient was found with that ID and set "question" to null, "missing" to [].
+
+OTHER PATIENT QUESTIONS: If the physician asks about a specific patient by name or by ID (e.g. "What is the diagnosis for John?", "Tell me about patient 1234567890?"), use RECORDED PATIENTS to answer in "document"; set "question" to null, "missing" to [].
+
+If the message is not about loading data or looking up a patient, proceed with normal extraction.
 """
 
     prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript. It may contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
@@ -180,7 +187,7 @@ Transcript to evaluate:
             missing.append("symptoms")
         question = (data.get("question") or "").strip()
         if missing and not question:
-            question = "Ask me anything or please state the patient's name, age, and presenting symptoms to continue."
+            question = "Ask about data or please state the patient's name, age, and presenting symptoms to continue."
         if not missing:
             question = None
         return {

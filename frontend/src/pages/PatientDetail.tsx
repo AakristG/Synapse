@@ -455,7 +455,7 @@ export default function PatientDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
             <div className="pb-3 border-b border-neutral-100 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-neutral-800">Consultation Recording</h2>
+              <h2 className="text-sm font-bold text-neutral-800">Latest Recording</h2>
               <button
                 type="button"
                 onClick={() => setShowEditModal(true)}

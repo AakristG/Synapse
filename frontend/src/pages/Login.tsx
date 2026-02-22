@@ -36,6 +36,7 @@ export default function Login() {
     <div className="login-page phase-in">
       <div className="phase-in-stagger login-page-inner">
       <div className="login-left">
+        <img src={axxessLogo} alt="Axxess" className="login-logo" />
         <h1 className="text-2xl font-bold text-red-700">Synapse</h1>
         <p className="login-mission">
           Empowering physicians with AI-powered documentation and support

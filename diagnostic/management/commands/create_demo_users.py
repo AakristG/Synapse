@@ -4,7 +4,7 @@ from diagnostic.models import UserProfile
 
 
 class Command(BaseCommand):
-    help = "Create demo users: patient (patient/patient123), physician (physician/physician123), nurse (nurse/nurse123), emt (emt/emt123)."
+    help = "Create demo users: patient (patient/patient123), physician (physician/physician123), nurse (nurse/nurse123), emt (emt/emt123), Richard Smith (Richard Smith/Richard@123)."
 
     def handle(self, *args, **options):
         for username, password, role in [
@@ -12,6 +12,7 @@ class Command(BaseCommand):
             ("physician", "physician123", "physician"),
             ("nurse", "nurse123", "nurse"),
             ("emt", "emt123", "emt"),
+            ("Richard Smith", "Richard@123", "physician"),
         ]:
             user, created = User.objects.get_or_create(
                 username=username,
@@ -22,4 +23,4 @@ class Command(BaseCommand):
                 user.save()
                 self.stdout.write(f"Created user: {username}")
             UserProfile.objects.get_or_create(user=user, defaults={"role": role})
-        self.stdout.write(self.style.SUCCESS("Demo users ready. Log in as patient (patient/patient123) or physician (physician/physician123), nurse/nurse123, emt/emt123."))
+        self.stdout.write(self.style.SUCCESS("Demo users ready. Log in as patient (patient/patient123), physician (physician/physician123), nurse/nurse123, emt/emt123, or Richard Smith (Richard Smith/Richard@123)."))
