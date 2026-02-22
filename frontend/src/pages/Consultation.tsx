@@ -97,7 +97,7 @@ export default function Consultation() {
     const primary = result.diagnosis ? [result.diagnosis] : []
     const possible = Array.isArray(result.possible_diagnoses)
       ? result.possible_diagnoses.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
-      : []
+      : [] 
     const allDiagnoses = [...primary]
     for (const d of possible) {
       if (!allDiagnoses.some((x) => x.trim().toLowerCase() === d.trim().toLowerCase())) {
