@@ -23,7 +23,7 @@ export default function AllPatients() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col">
+    <div className="min-h-screen bg-neutral-50 flex flex-col phase-in">
       <header className="shrink-0 h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
@@ -36,7 +36,7 @@ export default function AllPatients() {
         </div>
         <h1 className="font-bold text-neutral-900">All Recorded Patients</h1>
       </header>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-6 overflow-auto phase-in-stagger">
         <div className="max-w-2xl mx-auto">
           {patients.length === 0 ? (
             <p className="text-neutral-500 text-center py-12">No recorded patients yet. Record a visit from the Consultation page.</p>

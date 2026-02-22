@@ -1,15 +1,27 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Download, Stethoscope, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, Stethoscope, Trash2, FileText, Maximize2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
+
+export interface TranscriptLine {
+  speaker: string
+  text: string
+}
 
 export interface StoredPatient {
   id: string
   name: string
   age: string
   createdAt: string
+  transcriptRecording?: TranscriptLine[]
+  symptoms?: string[]
+  diagnosis?: string
+  possible_diagnoses?: string[]
+  treatment_plan?: string[]
+  document?: string
+  transcript?: string
   [key: string]: unknown
 }
 
@@ -45,6 +57,19 @@ function pickString(...values: unknown[]): string {
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return ''
+}
+
+function getTranscriptLines(patient: StoredPatient): TranscriptLine[] {
+  const rec = patient.transcriptRecording
+  if (Array.isArray(rec) && rec.length > 0) {
+    return rec.filter(
+      (item): item is TranscriptLine =>
+        typeof item === 'object' && item !== null && 'speaker' in item && 'text' in item,
+    )
+  }
+  const t = pickString(patient.transcript)
+  if (t) return [{ speaker: 'Clinician', text: t }]
+  return []
 }
 
 function parseDocumentObject(documentText: string): UnknownObject | null {
@@ -217,6 +242,7 @@ export default function PatientDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [medicalPdfUrl, setMedicalPdfUrl] = useState<string | null>(null)
+  const [pdfExpanded, setPdfExpanded] = useState(false)
   const patient = useMemo(() => {
     const list = loadPatients()
     return list.find((p) => p.id === id) || null
@@ -246,12 +272,21 @@ export default function PatientDetail() {
     }
   }, [medicalPdfUrl])
 
-  const handlePrintPdf = () => {
+  const transcriptLines = useMemo(() => (patient ? getTranscriptLines(patient) : []), [patient])
+  const possibleDiagnoses = asStringArray(patient?.possible_diagnoses ?? [])
+  const treatmentPlan = asStringArray(patient?.treatment_plan ?? [])
+
+  const handleDownloadPdf = () => {
     if (!medicalPdfUrl || !patient) return
     const a = document.createElement('a')
     a.href = medicalPdfUrl
     a.download = `patient-${patient.id}-clinical-note.pdf`
     a.click()
+  }
+
+  const handleViewPdfNewTab = () => {
+    if (!medicalPdfUrl) return
+    window.open(medicalPdfUrl, '_blank', 'noopener,noreferrer')
   }
 
   const handleDelete = () => {
@@ -275,7 +310,7 @@ export default function PatientDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 phase-in">
       <header className="sticky top-0 z-10 h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between print:flex">
         <div className="flex items-center gap-4">
           <Link
@@ -300,7 +335,7 @@ export default function PatientDetail() {
         <div className="flex items-center gap-2 print:hidden">
           <button
             type="button"
-            onClick={handlePrintPdf}
+            onClick={handleDownloadPdf}
             disabled={!medicalPdfUrl}
             className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50"
           >
@@ -318,23 +353,139 @@ export default function PatientDetail() {
         </div>
       </header>
 
-      <main className="p-6 max-w-4xl mx-auto">
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-neutral-100 bg-neutral-50">
-            <h2 className="text-sm font-bold text-neutral-800">Clinical Documentation (PDF)</h2>
+      <main className="p-6 max-w-6xl mx-auto space-y-6 phase-in-stagger">
+        {/* Row 1: Consultation recording and Clinical document side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
+            <div className="pb-3 border-b border-neutral-100">
+              <h2 className="text-sm font-bold text-neutral-800">Consultation Recording</h2>
+            </div>
+            <div className="pt-4 max-h-[520px] overflow-auto space-y-3">
+              {transcriptLines.length > 0 ? (
+                transcriptLines.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex flex-col ${line.speaker === 'Clinician' ? 'items-end' : 'items-start'}`}
+                  >
+                    <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">{line.speaker}</p>
+                    <div
+                      className={`max-w-[85%] p-3 rounded-xl text-sm ${
+                        line.speaker === 'Clinician'
+                          ? 'bg-red-50 border border-red-100 text-red-900'
+                          : 'bg-emerald-50 border border-emerald-100 text-emerald-900'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{line.text}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-neutral-500">No consultation recording for this patient.</p>
+              )}
+            </div>
           </div>
-          <div className="p-6 overflow-auto">
-            {medicalPdfUrl ? (
-              <iframe
-                title="Clinical document PDF preview"
-                src={medicalPdfUrl}
-                className="w-full h-[900px] rounded-xl border border-neutral-100"
-              />
-            ) : (
-              <p className="text-sm text-neutral-500">Generating medical PDF...</p>
-            )}
+
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
+            <div className="pb-3 border-b border-neutral-100 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-neutral-800">Clinical Document (PDF)</h2>
+              <div className="flex items-center gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={handleViewPdfNewTab}
+                  disabled={!medicalPdfUrl}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  <FileText size={16} />
+                  View PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPdfExpanded(true)}
+                  disabled={!medicalPdfUrl}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 text-sm font-bold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  <Maximize2 size={16} />
+                  Expand
+                </button>
+              </div>
+            </div>
+            <div className="pt-4 overflow-auto">
+              {medicalPdfUrl ? (
+                <iframe
+                  title="Clinical document PDF preview"
+                  src={medicalPdfUrl}
+                  className="w-full h-[520px] rounded-xl border border-neutral-100"
+                />
+              ) : (
+                <p className="text-sm text-neutral-500">Generating medical PDF...</p>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* Row 2: Diagnosis and Treatment below */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
+            <div className="pb-3 border-b border-neutral-100">
+              <h2 className="text-sm font-bold text-neutral-800">Diagnosis</h2>
+            </div>
+            <div className="pt-4">
+              {possibleDiagnoses.length > 0 ? (
+                <ul className="list-disc list-inside space-y-1.5 text-sm text-neutral-700">
+                  {possibleDiagnoses.map((d, i) => (
+                    <li key={i}>{d}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-neutral-500">No diagnosis recorded.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden p-6">
+            <div className="pb-3 border-b border-neutral-100">
+              <h2 className="text-sm font-bold text-neutral-800">Treatment & Plan</h2>
+            </div>
+            <div className="pt-4">
+              {treatmentPlan.length > 0 ? (
+                <ol className="list-decimal list-inside space-y-2 text-sm text-neutral-700">
+                  {treatmentPlan.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-sm text-neutral-500">No treatment plan recorded.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Expanded PDF modal */}
+        {pdfExpanded && medicalPdfUrl && (
+          <div
+            className="fixed inset-0 z-50 bg-black/70 flex flex-col items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Expanded PDF view"
+          >
+            <div className="flex items-center justify-between w-full max-w-6xl mb-2">
+              <span className="text-white font-bold">Clinical note — expand view</span>
+              <button
+                type="button"
+                onClick={() => setPdfExpanded(false)}
+                className="p-2 rounded-lg bg-white/20 text-white hover:bg-white/30"
+                aria-label="Close"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <iframe
+              title="Clinical document PDF (expanded)"
+              src={medicalPdfUrl}
+              className="w-full max-w-6xl flex-1 rounded-xl border border-white/20 bg-white min-h-[80vh]"
+            />
+          </div>
+        )}
       </main>
     </div>
   )

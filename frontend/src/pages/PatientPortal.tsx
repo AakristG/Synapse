@@ -7,7 +7,7 @@ export default function PatientPortal() {
   const { user, logout } = useAuth()
 
   return (
-    <div className="login-page">
+    <div className="login-page phase-in">
       <div className="login-card" style={{ maxWidth: '420px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
           <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

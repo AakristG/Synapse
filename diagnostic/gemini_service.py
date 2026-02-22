@@ -90,9 +90,13 @@ def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
     prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript. It may contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
 
 STRICT RULES — you must follow these exactly:
-- Extract ONLY what is explicitly stated or clearly intended in the transcript. Do not infer diagnoses or add information the physician did not say.
+- Extract ONLY what is explicitly stated or clearly intended in the transcript (and previous context if provided). Do not infer diagnoses or add information the physician did not say.
 - If the transcript does not mention something, leave it empty: "" for strings, [] for symptoms, {} for vitals.
 - Do not invent patient names, ages, vitals, symptoms, or diagnoses. Do not use example or typical values.
+- REQUIRED for intake: You MUST populate "missing" and "question" so the physician knows what to provide next.
+  - "missing": array of strings. Include "name" if no patient name is stated in this transcript or previous context; "age" if no age is stated; "symptoms" if no symptoms (or chief complaint) are stated. Only include these three when truly absent.
+  - When "missing" is non-empty, set "question" to one short, professional sentence asking the physician to provide the missing item(s), e.g. "Please state the patient's name, age, and presenting symptoms to continue." or "Please provide the patient's age and presenting symptoms." Do not invent any name, age, or symptoms; leave them empty until the physician states them.
+  - When name, age, and at least one symptom are all present, set "missing" to [] and "question" to null.
 - SPELLING: In all output (name, age, report, vitals, symptoms, diagnosis, document), use properly spelled words. Correct obvious dictation/ASR errors to standard medical terminology: correct drug names (e.g. "lisinopril" not "lisinapril"), condition names (e.g. "hypertension" not "hipertension"), anatomy, and common clinical terms. Preserve the physician’s intent; only normalize spelling and standardize medical terms.
 - For the "document" field: write a short clinical paragraph using ONLY information from the transcript, with proper spelling and standard medical wording. For any section the physician did not mention, write "Not stated."
 
@@ -145,15 +149,37 @@ Transcript to evaluate:
                 "Continue current medications as prescribed unless otherwise noted.",
                 "Reassess at next visit.",
             ]
+        name = (data.get("name") or "").strip()
+        age = (data.get("age") or "").strip()
+        symptoms = data.get("symptoms") or []
+        if not isinstance(symptoms, list):
+            symptoms = []
+        symptoms = [str(s).strip() for s in symptoms if s and str(s).strip()]
+        missing = data.get("missing") or []
+        if not isinstance(missing, list):
+            missing = []
+        missing = [str(m).strip() for m in missing if m and str(m).strip()]
+        # Ensure missing reflects what we actually don't have (do not add patient until name, age, symptoms)
+        if not name and "name" not in missing:
+            missing.append("name")
+        if not age and "age" not in missing:
+            missing.append("age")
+        if not symptoms and "symptoms" not in missing:
+            missing.append("symptoms")
+        question = (data.get("question") or "").strip()
+        if missing and not question:
+            question = "Please state the patient's name, age, and presenting symptoms to continue."
+        if not missing:
+            question = None
         return {
             "error": "",
-            "missing": data.get("missing") or [],
-            "question": data.get("question"),
-            "name": data.get("name") or "",
-            "age": data.get("age") or "",
+            "missing": missing,
+            "question": question,
+            "name": name,
+            "age": age,
             "report": data.get("report") or "",
             "vitals": data.get("vitals") or {},
-            "symptoms": data.get("symptoms") or [],
+            "symptoms": symptoms,
             "diagnosis": data.get("diagnosis") or "",
             "possible_diagnoses": possible,
             "treatment_plan": treatment,

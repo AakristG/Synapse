@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import axxessLogo from '../assets/axxess-logo.png'
 import './Login.css'
 
 export default function Login() {
@@ -32,7 +33,14 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page phase-in">
+      <div className="phase-in-stagger login-page-inner">
+      <div className="login-left">
+        <h1 className="text-2xl font-bold text-red-700">Synapse</h1>
+        <p className="login-mission">
+          Empowering physicians with AI-powered documentation and support
+        </p>
+      </div>
       <div className="login-card">
         <h1>Diagnostic Assistant</h1>
         <p className="login-subtitle">Sign in as Patient or Physician</p>
@@ -62,6 +70,7 @@ export default function Login() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   )

@@ -39,6 +39,8 @@ interface TranscriptLine {
 interface ExtractionResult {
   transcript?: string
   document?: string
+  question?: string | null
+  missing?: string[]
   name?: string
   age?: string
   symptoms?: string[]
@@ -47,6 +49,9 @@ interface ExtractionResult {
   treatment_plan?: string[]
   [key: string]: unknown
 }
+
+const INITIAL_AI_MESSAGE =
+  'Please state the patient\'s name, age, and presenting symptoms to begin documentation.'
 
 function generatePatientId(): string {
   return String(Math.floor(1000000000 + Math.random() * 9000000000))
@@ -66,7 +71,9 @@ export default function Consultation() {
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [transcript, setTranscript] = useState<TranscriptLine[]>([])
+  const [transcript, setTranscript] = useState<TranscriptLine[]>(() => [
+    { speaker: 'Synapse', text: INITIAL_AI_MESSAGE },
+  ])
   const [now, setNow] = useState(() => new Date())
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
@@ -83,57 +90,82 @@ export default function Consultation() {
   const speechRecognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const speechTranscriptRef = useRef('')
 
-  const applyExtractionResult = useCallback((result: ExtractionResult) => {
-    const lines: TranscriptLine[] = []
-    if (result.transcript && result.transcript.trim()) {
-      lines.push({ speaker: 'Clinician', text: result.transcript.trim() })
-    }
-    if (result.document && result.document.trim()) {
-      lines.push({ speaker: 'Synapse', text: result.document.trim() })
-    }
-    if (lines.length > 0) setTranscript(lines)
-    if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
-      setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
-    }
-    // Diagnosis: primary (from transcript) + Gemini's list of possible diagnoses to consider (from Synapse response)
-    const primary = result.diagnosis ? [result.diagnosis] : []
-    const possible = Array.isArray(result.possible_diagnoses)
-      ? result.possible_diagnoses.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
-      : [] 
-    const allDiagnoses = [...primary]
-    for (const d of possible) {
-      if (!allDiagnoses.some((x) => x.trim().toLowerCase() === d.trim().toLowerCase())) {
-        allDiagnoses.push(d.trim())
+  const applyExtractionResult = useCallback(
+    (result: ExtractionResult, options?: { append?: boolean; currentTranscript?: TranscriptLine[] }) => {
+      const append = options?.append ?? false
+      const currentTranscript = options?.currentTranscript ?? []
+      const newLines: TranscriptLine[] = []
+      if (result.transcript && result.transcript.trim()) {
+        newLines.push({ speaker: 'Clinician', text: result.transcript.trim() })
       }
-    }
-    if (allDiagnoses.length > 0) {
-      setDiagnosis(allDiagnoses)
-      setSelectedDiagnosis(allDiagnoses[0] ?? null)
-      setTreatmentPlanForSelection(null)
-      setPatientSummaryForSelection(null)
-    }
-    // Treatment & Plan: steps from Gemini (Synapse + primary diagnosis)
-    const plan = Array.isArray(result.treatment_plan)
-      ? result.treatment_plan.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
-      : []
-    if (plan.length > 0) setMeds(plan.map((s) => s.trim()))
-    const id = generatePatientId()
-    const name = (result.name || '').trim() || 'Unknown'
-    const age = (result.age || '').trim() || ''
-    const patient: StoredPatient = {
-      id,
-      name,
-      age,
-      createdAt: new Date().toISOString(),
-      ...result,
-    }
-    setPatients((prev) => {
-      const next = [patient, ...prev].slice(0, 50)
-      localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    toast.success(`Patient recorded — ID ${id}`)
-  }, [])
+      const synapseText =
+        (result.question && result.question.trim()) ||
+        (result.document && result.document.trim()) ||
+        ''
+      if (synapseText) {
+        newLines.push({ speaker: 'Synapse', text: synapseText.trim() })
+      }
+      const fullTranscriptLines = newLines.length > 0
+        ? append
+          ? [...currentTranscript, ...newLines]
+          : newLines
+        : currentTranscript
+      if (newLines.length > 0) {
+        setTranscript((prev) => (append ? [...prev, ...newLines] : newLines))
+      }
+      if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
+        setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
+      }
+      const primary = result.diagnosis ? [result.diagnosis] : []
+      const possible = Array.isArray(result.possible_diagnoses)
+        ? result.possible_diagnoses.filter((d): d is string => typeof d === 'string' && d.trim() !== '')
+        : []
+      const allDiagnoses = [...primary]
+      for (const d of possible) {
+        if (!allDiagnoses.some((x) => x.trim().toLowerCase() === d.trim().toLowerCase())) {
+          allDiagnoses.push(d.trim())
+        }
+      }
+      if (allDiagnoses.length > 0) {
+        setDiagnosis(allDiagnoses)
+        setSelectedDiagnosis(allDiagnoses[0] ?? null)
+        setTreatmentPlanForSelection(null)
+        setPatientSummaryForSelection(null)
+      }
+      const plan = Array.isArray(result.treatment_plan)
+        ? result.treatment_plan.filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+        : []
+      if (plan.length > 0) setMeds(plan.map((s) => s.trim()))
+      const name = (result.name || '').trim()
+      const age = (result.age || '').trim()
+      const symptomsList = Array.isArray(result.symptoms) ? result.symptoms : []
+      const hasRequired = name && age && symptomsList.length > 0
+      if (hasRequired) {
+        const id = generatePatientId()
+        const patient: StoredPatient = {
+          ...result,
+          id,
+          name,
+          age,
+          createdAt: new Date().toISOString(),
+          transcriptRecording: fullTranscriptLines,
+          symptoms: symptomsList,
+          diagnosis: result.diagnosis ?? '',
+          possible_diagnoses: possible.length > 0 ? possible : (Array.isArray(result.possible_diagnoses) ? result.possible_diagnoses : []),
+          treatment_plan: plan.length > 0 ? plan : (Array.isArray(result.treatment_plan) ? result.treatment_plan : []),
+          document: (result.document ?? '').trim(),
+          transcript: (result.transcript ?? '').trim(),
+        }
+        setPatients((prev) => {
+          const next = [patient, ...prev].slice(0, 50)
+          localStorage.setItem(PATIENTS_STORAGE_KEY, JSON.stringify(next))
+          return next
+        })
+        toast.success(`Patient recorded — ID ${id}`)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
@@ -173,7 +205,6 @@ export default function Consultation() {
   }, [selectedDiagnosis, symptoms, documentFromTranscript])
 
   const startSession = useCallback(() => {
-    resetSession()
     chunksRef.current = []
     speechTranscriptRef.current = ''
     const SpeechRecognitionAPI = window.SpeechRecognition ?? (window as Window & { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition
@@ -227,46 +258,55 @@ export default function Consultation() {
     setIsRecording(false)
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
     const liveTranscript = (speechTranscriptRef.current || '').trim()
+    const previousContext = transcript
+      .map((l) => `${l.speaker}: ${l.text}`)
+      .join('\n\n')
+      .trim()
+    const append = previousContext.length > 0
     setIsProcessing(true)
     toast.info(liveTranscript ? 'Sending your words to Synapse...' : 'Creating transcript from your recording...')
     const send = () => {
-      api.extractAudio(blob, '', liveTranscript)
+      api.extractAudio(blob, previousContext, liveTranscript)
         .then((data) => {
-          applyExtractionResult(data as ExtractionResult)
-          toast.success('Recording transcribed and analyzed.')
+          applyExtractionResult(data as ExtractionResult, { append, currentTranscript: transcript })
+          toast.success(append ? 'Response added. Continue when ready.' : 'Recording transcribed and analyzed.')
         })
         .catch((err) => toast.error(err instanceof Error ? err.message : 'Transcription failed.'))
         .finally(() => setIsProcessing(false))
     }
     if (liveTranscript) setTimeout(send, 300)
     else send()
-  }, [isRecording, applyExtractionResult])
+  }, [isRecording, transcript, applyExtractionResult])
 
   const handleFileUpload = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
-      resetSession()
       setIsUploading(true)
+      const previousContext = transcript
+        .map((l) => `${l.speaker}: ${l.text}`)
+        .join('\n\n')
+        .trim()
+      const append = previousContext.length > 0
       toast.info(`Processing ${file.name}...`)
       const reader = new FileReader()
       reader.onload = () => {
         const blob = new Blob([reader.result as ArrayBuffer], { type: file.type || 'audio/webm' })
-        api.extractAudio(blob)
+        api.extractAudio(blob, previousContext, '')
           .then((data) => {
-            applyExtractionResult(data as ExtractionResult)
-            toast.success('Audio transcribed and analyzed.')
+            applyExtractionResult(data as ExtractionResult, { append, currentTranscript: transcript })
+            toast.success(append ? 'Audio added to conversation.' : 'Audio transcribed and analyzed.')
           })
           .catch((err) => toast.error(err instanceof Error ? err.message : 'Transcription failed.'))
           .finally(() => setIsUploading(false))
       }
       reader.readAsArrayBuffer(file)
     },
-    [applyExtractionResult]
+    [transcript, applyExtractionResult],
   )
 
   const resetSession = () => {
-    setTranscript([])
+    setTranscript([{ speaker: 'Synapse', text: INITIAL_AI_MESSAGE }])
     setSymptoms([])
     setDiagnosis([])
     setSelectedDiagnosis(null)
@@ -306,7 +346,7 @@ export default function Consultation() {
   }, [symptoms, diagnosis, meds])
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900">
+    <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900 phase-in">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
@@ -337,7 +377,7 @@ export default function Consultation() {
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col overflow-auto p-6 gap-6 min-h-0">
+      <main className="flex-1 flex flex-col overflow-auto p-6 gap-6 min-h-0 phase-in-stagger">
         <div className="flex min-h-[50vh] shrink-0 gap-6">
         <section className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden relative min-h-0">
           <div className="px-8 py-5 border-b border-neutral-100 flex items-center justify-between bg-white z-10">
@@ -352,6 +392,16 @@ export default function Consultation() {
             </div>
             <div className="flex items-center gap-3">
               <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="audio/*" className="hidden" />
+              <button
+                type="button"
+                onClick={resetSession}
+                disabled={isRecording || isUploading}
+                className="flex items-center gap-2 px-3 py-2.5 border border-neutral-200 rounded-xl text-xs font-bold text-neutral-500 hover:bg-neutral-100 transition-all disabled:opacity-50"
+                title="Start a new patient consultation"
+              >
+                <Plus size={16} />
+                New consultation
+              </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isRecording || isUploading}
@@ -425,9 +475,9 @@ export default function Consultation() {
                   >
                     <div
                       className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
-                        line.speaker === 'Clinician'
+                        line.speaker === 'Clinician' /* TODO: change Clinician to username */
                           ? 'bg-red-600 text-white rounded-tr-none shadow-xl shadow-red-100/50'
-                          : line.speaker === 'Synapse'
+                          : line.speaker === 'Synapse AI'
                             ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
                             : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
                       }`}
@@ -451,25 +501,6 @@ export default function Consultation() {
               <div ref={transcriptEndRef} className="h-4" />
             </AnimatePresence>
           </div>
-
-          {transcript.length > 0 && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-neutral-900/90 backdrop-blur px-6 py-3 rounded-full border border-white/20 text-white flex items-center gap-6 shadow-2xl z-10 transition-all hover:bg-neutral-900">
-              <div className="flex items-center gap-2 pr-6 border-r border-white/20">
-                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Active Analysis</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-center">
-                  <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-tighter">Entities</p>
-                  <p className="text-xs font-bold">{symptoms.length + diagnosis.length + meds.length}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-tighter">Confidence</p>
-                  <p className="text-xs font-bold text-green-400">98.2%</p>
-                </div>
-              </div>
-            </div>
-          )}
         </section>
 
         <aside className="w-80 shrink-0 flex flex-col gap-4 min-h-0 overflow-hidden">

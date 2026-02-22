@@ -303,7 +303,7 @@ export default function Triage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 phase-in">
       <header className="h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link to="/consultation" className="flex items-center gap-2 text-neutral-600 hover:text-red-600 text-sm font-bold">

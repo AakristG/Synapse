@@ -162,6 +162,9 @@ LOGGING = {
     },
 }
 
+
+# TODO: When making repo public change GEMINI_API_KEY to an empty string and set the value in the .env file
+
 # Gemini API: set env var GEMINI_API_KEY or set the value here (avoid committing real keys).
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '') or 'AIzaSyA6YfpylqDLAiplIqa-PoKQ8ggXwAZ7TMM'
 
