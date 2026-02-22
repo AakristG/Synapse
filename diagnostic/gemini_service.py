@@ -1,7 +1,3 @@
-"""
-Gemini API: clinical intake from audio — collect name, age, report; extract vitals/symptoms/diagnosis; generate document.
-Requires GEMINI_API_KEY in environment.
-"""
 import json
 import os
 import re
@@ -11,83 +7,107 @@ from django.conf import settings
 def _get_client():
     api_key = getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        return None, "GEMINI_API_KEY not set"
+        return None, None, "GEMINI_API_KEY not set"
     try:
         from google import genai
         from google.genai import types
         return (genai.Client(api_key=api_key), types, None)
     except ImportError:
-        return None, "google-genai not installed"
+        return None, None, "gemini not installed"
 
 
-def intake_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm", previous_context: str = "") -> dict:
+def _empty_result(error_msg=""):
+    return {
+        "error": error_msg,
+        "missing": [],
+        "question": None,
+        "name": "",
+        "age": "",
+        "report": "",
+        "vitals": {},
+        "symptoms": [],
+        "diagnosis": "",
+        "document": "",
+        "transcript": "",
+    }
+
+
+def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
     """
-    Physician dictation only: listen to the physician's voice (consultation documentation).
-    Extract name, age, report, vitals, symptoms, diagnosis and generate a clinical document.
-    No conversation — no follow-up questions. Use "Not stated" for anything not said.
+    Step 1: Transcribe the audio to text only. Returns verbatim transcript (exactly what was said).
+    No extraction, no JSON — plain text only.
     """
     client, types, err = _get_client()
     if err:
-        return {
-            "error": err,
-            "missing": [],
-            "question": None,
-            "name": "",
-            "age": "",
-            "report": "",
-            "vitals": {},
-            "symptoms": [],
-            "diagnosis": "",
-            "document": "",
-            "transcript": "",
-        }
+        return ""
 
-    context_line = f'\nPrevious dictation context (merge or append if this is a continuation):\n{previous_context}\n' if previous_context else ""
-
-    prompt = """You are a medical documentation assistant. You are listening to a PHYSICIAN'S DICTATION only. This is the physician documenting a consultation — there is NO conversation with a patient, just the physician speaking into the microphone to record the visit.
-
-Your job: Listen to the physician's voice and extract everything they say, then produce a structured clinical document.
-
-1) Extract from the dictation (only what the physician said): patient NAME, patient AGE, chief complaint/REPORT (reason for visit), any VITALS (e.g. blood pressure, heart rate, temperature), SYMPTOMS, and DIAGNOSIS/assessment.
-2) Generate a short clinical DOCUMENT (plain text) with: Patient Name, Age, Chief Complaint, Vitals, Symptoms, Assessment/Diagnosis. Use "Not stated" for anything not mentioned.
-3) Do NOT ask any follow-up questions. Do NOT simulate a conversation. This is documentation from a single physician dictation only.
-""" + context_line + """
-Return ONLY a valid JSON object with exactly these keys (no markdown, no code fence):
-- "missing": [] (always empty — we do not ask questions)
-- "question": null (always null)
-- "name": string (from dictation or empty)
-- "age": string (e.g. "45" or empty)
-- "report": string (chief complaint or empty)
-- "vitals": object, e.g. {"blood_pressure": "120/80", "heart_rate": "72"}
-- "symptoms": array of strings
-- "diagnosis": string
-- "document": string — the full clinical note you generated
-- "transcript": string — what the physician said (verbatim or summary)
-
-Return only the JSON, no other text."""
+    prompt = """Transcribe this audio word for word. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
 
     try:
-        contents = [prompt, types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)]
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+        text_part = types.Part.from_text(text=prompt)
+        user_content = types.UserContent([audio_part, text_part])
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=contents,
+            model="gemini-2.5-flash",
+            contents=[user_content],
         )
-    except Exception as e:
-        return {
-            "error": str(e),
-            "missing": [],
-            "question": None,
-            "name": "",
-            "age": "",
-            "report": "",
-            "vitals": {},
-            "symptoms": [],
-            "diagnosis": "",
-            "document": "",
-            "transcript": "",
-        }
+        text = (getattr(response, "text", None) or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text)
+        return text.strip()
+    except Exception:
+        return ""
 
-    text = (response.text or "").strip()
+
+def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
+    """
+    Step 2: Gemini evaluates the transcript (text only). Extracts structure and builds clinical document.
+    The transcript is exactly what was said; this call only interprets it.
+    """
+    client, types, err = _get_client()
+    if err:
+        return _empty_result(err)
+
+    if not (transcript_text or "").strip():
+        return _empty_result("No transcript to evaluate")
+
+    context_line = f'\nPrevious context (if continuing):\n{previous_context}\n' if previous_context else ""
+
+    prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript — the exact words they said.
+
+STRICT RULES — you must follow these exactly:
+- Extract ONLY what is explicitly stated in the transcript. Do not infer, assume, or add anything.
+- If the transcript does not mention something, leave it empty: "" for strings, [] for symptoms, {} for vitals.
+- Do not invent patient names, ages, vitals, symptoms, or diagnoses. Do not use example or typical values.
+- For the "document" field: list only facts that appear in the transcript. For any section the physician did not mention, write "Not stated." Do not fill in with plausible or common clinical text.
+
+- The physician will always start by saying the patient's name, age, and description. 
+
+Extract only when clearly stated in the transcript:
+- name: "" unless a patient name is explicitly said
+- age: "" unless age is explicitly said
+- report: "" unless chief complaint/reason for visit is explicitly said
+- vitals: {} unless specific vitals (e.g. BP, HR, temp) are explicitly said — then use only those
+- symptoms: [] unless specific symptoms are explicitly said — then only those
+- diagnosis: "" unless assessment/diagnosis is explicitly said
+
+Document: one short paragraph that includes ONLY information from the transcript. Use "Not stated" for any category not mentioned. Do not generate a single fact that is not in the transcript.
+""" + context_line + """
+Transcript to evaluate:
+"""
+    full_prompt = prompt + "\n" + (transcript_text or "").strip() + "\n\nReturn ONLY a valid JSON object with exactly these keys (no markdown, no code fence): \"missing\": [], \"question\": null, \"name\": string, \"age\": string, \"report\": string, \"vitals\": object, \"symptoms\": array of strings, \"diagnosis\": string, \"document\": string. Return only the JSON."
+
+    try:
+        user_content = types.UserContent(full_prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[user_content],
+        )
+        text = (getattr(response, "text", None) or "").strip()
+    except Exception as e:
+        return _empty_result(str(e))
+
     if text.startswith("```"):
         text = re.sub(r"^```\w*\n?", "", text)
         text = re.sub(r"\n?```\s*$", "", text)
@@ -106,22 +126,39 @@ Return only the JSON, no other text."""
             "symptoms": data.get("symptoms") or [],
             "diagnosis": data.get("diagnosis") or "",
             "document": data.get("document") or "",
-            "transcript": data.get("transcript") or "",
         }
     except json.JSONDecodeError:
-        return {
-            "error": "Gemini response was not valid JSON",
-            "missing": [],
-            "question": None,
-            "name": "",
-            "age": "",
-            "report": "",
-            "vitals": {},
-            "symptoms": [],
-            "diagnosis": "",
-            "document": "",
-            "transcript": text[:2000] if text else "",
-        }
+        return _empty_result("Gemini response was not valid JSON")
+
+
+def intake_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm", previous_context: str = "") -> dict:
+    """
+    Two-step flow: (1) Transcribe audio to exact words, (2) Gemini evaluates that transcript only.
+    Transcript = exactly what you said; document/symptoms/diagnosis = Gemini's evaluation of that text.
+    """
+    # Step 1: Get verbatim transcript (exactly what was said)
+    transcript = transcribe_audio(audio_bytes, mime_type=mime_type)
+    if not transcript and not previous_context:
+        return _empty_result("Could not transcribe audio")
+
+    # Step 2: Gemini evaluates the transcript (text only) and returns structured output
+    evaluated = intake_from_text(transcript, previous_context=previous_context)
+    if evaluated.get("error"):
+        return {**evaluated, "transcript": transcript}
+
+    return {
+        "error": "",
+        "missing": evaluated.get("missing") or [],
+        "question": evaluated.get("question"),
+        "name": evaluated.get("name") or "",
+        "age": evaluated.get("age") or "",
+        "report": evaluated.get("report") or "",
+        "vitals": evaluated.get("vitals") or {},
+        "symptoms": evaluated.get("symptoms") or [],
+        "diagnosis": evaluated.get("diagnosis") or "",
+        "document": evaluated.get("document") or "",
+        "transcript": transcript,
+    }
 
 
 def extract_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> dict:

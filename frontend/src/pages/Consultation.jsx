@@ -38,8 +38,16 @@ export default function Consultation() {
   const chunksRef = useRef([])
 
   const applyExtractionResult = useCallback((result) => {
-    if (result.transcript) {
-      setTranscript([{ speaker: 'Clinician', text: result.transcript }])
+    // Show conversation: (1) what you said — transcript, (2) AI response — structured summary
+    const lines = []
+    if (result.transcript && result.transcript.trim()) {
+      lines.push({ speaker: 'Clinician', text: result.transcript.trim() })
+    }
+    if (result.document && result.document.trim()) {
+      lines.push({ speaker: 'Synapse', text: result.document.trim() })
+    }
+    if (lines.length > 0) {
+      setTranscript(lines)
     }
     if (Array.isArray(result.symptoms) && result.symptoms.length > 0) {
       setSymptoms(result.symptoms.map((s) => (typeof s === 'string' ? s : String(s))))
@@ -145,12 +153,21 @@ export default function Consultation() {
   return (
     <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            if (!isRecording && !isUploading) startSession()
+          }}
+          disabled={isUploading}
+          className="flex items-center gap-3 rounded-xl p-1.5 -ml-1.5 transition-all hover:bg-blue-50 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+          title="Click to start voice — Gemini will listen and respond"
+          aria-label="Synapse: click to start voice input, Gemini will listen and respond"
+        >
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
             <Stethoscope size={20} strokeWidth={2.5} />
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
-        </div>
+        </button>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
             <Clock size={14} />
@@ -205,7 +222,7 @@ export default function Consultation() {
           <div className="flex-1 min-h-0 flex flex-col overflow-auto px-6 py-4 space-y-4 bg-neutral-50/80 rounded-b-3xl">
             <AnimatePresence initial={false}>
               {transcript.length === 0 && !isRecording && !isUploading && !isProcessing && (
-                <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 space-y-4 opacity-50 min-h-[240px]">
+                <div key="empty-state" className="flex-1 flex flex-col items-center justify-center text-neutral-400 space-y-4 opacity-50 min-h-[240px]">
                   <div className="w-20 h-20 rounded-3xl bg-neutral-100 flex items-center justify-center border border-neutral-200">
                     <FileAudio size={40} strokeWidth={1.5} />
                   </div>
@@ -216,7 +233,7 @@ export default function Consultation() {
                 </div>
               )}
               {isRecording && transcript.length === 0 && (
-                <div className="min-h-[200px] flex flex-col items-center justify-center py-8 text-neutral-500">
+                <div key="recording" className="min-h-[200px] flex flex-col items-center justify-center py-8 text-neutral-500">
                   <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4 animate-pulse">
                     <Mic size={28} className="text-red-600" />
                   </div>
@@ -225,7 +242,7 @@ export default function Consultation() {
                 </div>
               )}
               {(isUploading || isProcessing) && (
-                <div className="min-h-[200px] flex flex-col items-center justify-center py-8">
+                <div key="processing" className="min-h-[200px] flex flex-col items-center justify-center py-8">
                   <div className="relative">
                     <Loader2 size={48} className="animate-spin text-blue-200" />
                     <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-blue-600 animate-pulse" />
@@ -239,7 +256,7 @@ export default function Consultation() {
               {!isUploading && !isProcessing &&
                 transcript.map((line, idx) => (
                   <motion.div
-                    key={idx}
+                    key={`t-${idx}`}
                     initial={{ opacity: 0, x: line.speaker === 'Clinician' ? 20 : -20, y: 10 }}
                     animate={{ opacity: 1, x: 0, y: 0 }}
                     className={`flex flex-col ${line.speaker === 'Clinician' ? 'items-end' : 'items-start'}`}
@@ -248,21 +265,24 @@ export default function Consultation() {
                       className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
                         line.speaker === 'Clinician'
                           ? 'bg-blue-600 text-white rounded-tr-none shadow-xl shadow-blue-100/50'
-                          : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
+                          : line.speaker === 'Synapse'
+                            ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
+                            : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
                       }`}
                     >
                       <div
                         className={`absolute top-0 ${line.speaker === 'Clinician' ? '-right-3' : '-left-3'} w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                          line.speaker === 'Clinician' ? 'bg-blue-700 text-blue-50' : 'bg-neutral-800 text-white'
+                          line.speaker === 'Clinician' ? 'bg-blue-700 text-blue-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
                         }`}
                       >
-                        {line.speaker.charAt(0)}
+                        {line.speaker === 'Synapse' ? 'S' : line.speaker.charAt(0)}
                       </div>
                       <p className="font-bold text-[10px] uppercase tracking-wider mb-2 opacity-80 flex items-center gap-2">
                         {line.speaker}
                         {line.speaker === 'Clinician' && <Zap size={10} fill="currentColor" />}
+                        {line.speaker === 'Synapse' && <Activity size={10} />}
                       </p>
-                      <p className="font-medium">{line.text}</p>
+                      <p className="font-medium whitespace-pre-wrap">{line.text}</p>
                     </div>
                   </motion.div>
                 ))}
@@ -324,7 +344,7 @@ export default function Consultation() {
                           <motion.span
                             initial={{ scale: 0.8, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            key={i}
+                            key={`symptom-${i}-${String(tag).slice(0, 20)}`}
                             className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
                           >
                             {tag}
@@ -335,7 +355,7 @@ export default function Consultation() {
                         <p className="text-xs text-neutral-400 italic font-medium">Listening for symptoms...</p>
                       )}
                       {transcript.length > 0 && !isRecording && !isProcessing && (
-                        <button className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-blue-400 hover:text-blue-600 transition-all">
+                        <button key="add-symptom-btn" type="button" className="w-8 h-8 rounded-xl border-2 border-dashed border-neutral-200 flex items-center justify-center text-neutral-400 hover:border-blue-400 hover:text-blue-600 transition-all">
                           <Plus size={14} />
                         </button>
                       )}
@@ -352,7 +372,7 @@ export default function Consultation() {
                           <motion.div
                             initial={{ x: 10, opacity: 0 }}
                             animate={{ x: 0, opacity: 1 }}
-                            key={i}
+                            key={`diagnosis-${i}-${String(d).slice(0, 20)}`}
                             className="p-4 bg-blue-50 border border-blue-100 rounded-2xl shadow-sm group hover:bg-blue-100 transition-all"
                           >
                             <div className="flex items-start justify-between">
@@ -384,7 +404,7 @@ export default function Consultation() {
                           <motion.div
                             initial={{ y: 5, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
-                            key={i}
+                            key={`med-${i}-${String(m).slice(0, 20)}`}
                             className="p-4 bg-neutral-50 border border-neutral-100 rounded-2xl text-[13px] font-bold text-neutral-700 flex items-center gap-4 hover:border-blue-200 transition-all"
                           >
                             <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-neutral-100 flex items-center justify-center text-blue-600">
