@@ -19,6 +19,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
+import axxessLogo from '../assets/axxess-logo.png'
 import { toast } from 'sonner'
 import { api } from '../api'
 
@@ -145,11 +146,8 @@ export default function Consultation() {
   return (
     <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900">
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-            <Stethoscope size={20} strokeWidth={2.5} />
-          </div>
-          <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
+        <div className="flex items-center">
+          <img src={axxessLogo} alt="Axxess logo" className="h-10 w-auto" />
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
