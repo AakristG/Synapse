@@ -148,6 +148,7 @@ export default function Consultation() {
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center">
           <img src={axxessLogo} alt="Axxess logo" className="h-10 w-auto" />
+          <h1 className="font-bold ps-3">Synapse</h1>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
