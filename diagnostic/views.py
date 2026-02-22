@@ -205,7 +205,11 @@ def audio_extract(request):
         if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
             mime = 'audio/webm'
         previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
-        result = intake_from_audio(audio_bytes, mime_type=mime, previous_context=previous_context)
+        # If client sent a transcript (e.g. from browser speech recognition), use it so "Clinician" = exactly what they said
+        client_transcript = (request.data.get('transcript') or request.POST.get('transcript') or '').strip()
+        result = intake_from_audio(
+            audio_bytes, mime_type=mime, previous_context=previous_context, client_transcript=client_transcript
+        )
         if result.get('error') and not result.get('transcript') and not result.get('document'):
             return Response(
                 {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'document', 'transcript']}},
