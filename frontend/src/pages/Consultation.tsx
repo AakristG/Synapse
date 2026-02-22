@@ -28,6 +28,9 @@ import axxessLogo from '../assets/axxess-logo.png'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 
+/** Browser SpeechRecognition instance (Web Speech API; not in all TS DOM libs) */
+type SpeechRecognitionInstance = InstanceType<NonNullable<typeof window.SpeechRecognition>> extends infer T ? T : { start(): void; stop(): void }
+
 interface TranscriptLine {
   speaker: string
   text: string
@@ -65,7 +68,6 @@ export default function Consultation() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [now, setNow] = useState(() => new Date())
-  const [documentText, setDocumentText] = useState('')
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
   const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(null)
@@ -78,7 +80,7 @@ export default function Consultation() {
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const speechRecognitionRef = useRef<SpeechRecognition | null>(null)
+  const speechRecognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const speechTranscriptRef = useRef('')
 
   const applyExtractionResult = useCallback((result: ExtractionResult) => {
@@ -174,17 +176,18 @@ export default function Consultation() {
     resetSession()
     chunksRef.current = []
     speechTranscriptRef.current = ''
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (SpeechRecognition) {
+    const SpeechRecognitionAPI = window.SpeechRecognition ?? (window as Window & { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition
+    if (SpeechRecognitionAPI) {
       try {
-        const recognition = new SpeechRecognition()
+        const recognition = new SpeechRecognitionAPI()
         recognition.continuous = true
         recognition.interimResults = true
         recognition.lang = 'en-US'
         recognition.onresult = (e: SpeechRecognitionEvent) => {
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (e.results[i].isFinal) {
-              const t = e.results[i][0].transcript
+            const result = e.results[i]
+            if (result?.isFinal) {
+              const t = result?.[0]?.transcript
               if (t) speechTranscriptRef.current = (speechTranscriptRef.current + ' ' + t).trim()
             }
           }

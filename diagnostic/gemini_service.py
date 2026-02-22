@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 import re
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _get_client():
@@ -34,32 +37,40 @@ def _empty_result(error_msg=""):
     }
 
 
-def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
+def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple[str, str]:
     """
-    Step 1: Transcribe the audio to text only. Returns verbatim transcript (exactly what was said).
-    No extraction, no JSON — plain text only.
+    Step 1: Transcribe the audio to text only. Returns (transcript, error_message).
+    If success: (text, ""). If failure: ("", "error description").
     """
     client, types, err = _get_client()
     if err:
-        return ""
+        return "", err
 
     prompt = """Transcribe this audio word for word. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
 
-    try:
-        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
-        text_part = types.Part.from_text(text=prompt)
-        user_content = types.UserContent([audio_part, text_part])
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[user_content],
-        )
-        text = (getattr(response, "text", None) or "").strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```\s*$", "", text)
-        return text.strip()
-    except Exception:
-        return ""
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    for model_name in models_to_try:
+        try:
+            audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+            text_part = types.Part.from_text(text=prompt)
+            user_content = types.UserContent([audio_part, text_part])
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[user_content],
+            )
+            text = (getattr(response, "text", None) or "").strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```\w*\n?", "", text)
+                text = re.sub(r"\n?```\s*$", "", text)
+            return text.strip(), ""
+        except Exception as e:
+            err_msg = str(e).strip() or "Unknown Gemini error"
+            logger.warning("Gemini transcribe_audio failed with %s: %s", model_name, err_msg)
+            if model_name == models_to_try[-1]:
+                logger.exception("Gemini transcribe_audio failed: %s", e)
+                return "", err_msg
+            continue
+    return "", "No model available"
 
 
 def intake_from_text(transcript_text: str, previous_context: str = "") -> dict:
@@ -166,9 +177,13 @@ def intake_from_audio(
     if client_transcript and client_transcript.strip():
         transcript = client_transcript.strip()
     else:
-        transcript = transcribe_audio(audio_bytes, mime_type=mime_type)
+        transcript, transcribe_err = transcribe_audio(audio_bytes, mime_type=mime_type)
+        if transcribe_err and not transcript:
+            return _empty_result(transcribe_err)
     if not transcript and not previous_context:
-        return _empty_result("Could not transcribe audio")
+        return _empty_result(
+            "Could not transcribe audio. Check GEMINI_API_KEY, model availability, and network (see server logs)."
+        )
 
     # Step 2: Gemini evaluates the transcript (text only) and returns structured output
     evaluated = intake_from_text(transcript, previous_context=previous_context)

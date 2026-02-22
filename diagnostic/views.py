@@ -1,3 +1,4 @@
+import logging
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -183,6 +184,9 @@ def export_emr(request, pk):
         'export_id': export.id,
         'status': export.status,
         'payload': payload,
+    })
+
+
 def _generate_patient_id():
     import random
     return str(random.randint(1000000000, 9999999999))
@@ -212,10 +216,6 @@ def recorded_patients_create(request):
     }, status=status.HTTP_201_CREATED)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def recorded_patients_list(request):
@@ -231,9 +231,6 @@ def recorded_patients_list(request):
             **p.payload,
         })
     return Response(out)
-
-
-    }, status=status.HTTP_200_OK)
 
 
 @api_view(['DELETE'])
@@ -273,8 +270,10 @@ def audio_extract(request):
             audio_bytes, mime_type=mime, previous_context=previous_context, client_transcript=client_transcript
         )
         if result.get('error') and not result.get('transcript') and not result.get('document'):
+            err_msg = result.get('error', 'Unknown error')
+            logging.getLogger(__name__).warning('audio/extract 502: %s', err_msg)
             return Response(
-                {'detail': result['error'], **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'possible_diagnoses', 'treatment_plan', 'document', 'transcript']}},
+                {'detail': err_msg, **{k: result.get(k) for k in ['missing', 'question', 'name', 'age', 'report', 'vitals', 'symptoms', 'diagnosis', 'possible_diagnoses', 'treatment_plan', 'document', 'transcript']}},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({

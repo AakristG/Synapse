@@ -16,6 +16,15 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load .env from project root so GEMINI_API_KEY, TWILIO_*, etc. are set when running runserver
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file)
+    except ImportError:
+        pass  # python-dotenv not installed; rely on system env
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -131,11 +140,33 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True  # restrict in production
 
 
+# Logging: show diagnostic and Gemini errors in the runserver console
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'diagnostic': {
+            'level': 'DEBUG',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+    },
+}
+
 # Gemini API: set env var GEMINI_API_KEY or set the value here (avoid committing real keys).
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '') or 'AIzaSyA6YfpylqDLAiplIqa-PoKQ8ggXwAZ7TMM'
 
 # Twilio Voice (patient intake calls). Loaded from .env.
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "") or 'ACf573843f3374b0ce761427b5555a2cd2'
 
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "") or '3a77aa6701eebb3711e580fec1faa4a1'
+TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER", "") or '+18776119923'
