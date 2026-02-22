@@ -156,7 +156,7 @@ export default function Consultation() {
       <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-            <Stethoscope size={20} strokeWidth={2.5} />
+            <img src="/assets/axxess-logo.png" className="w-full h-full object-contain rounded-xl" />
           </div>
           <h1 className="font-bold text-lg tracking-tight leading-none">Synapse</h1>
         </div>
