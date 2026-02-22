@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { AlertTriangle, ArrowLeft, Download, Save, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '../api'
@@ -329,7 +330,13 @@ export default function Triage() {
       </header>
 
       <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <section className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-4">
+        <motion.section
+          className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-4"
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.1 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+        >
           <h2 className="text-sm font-bold text-neutral-800">Triage Intake</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -376,9 +383,15 @@ export default function Triage() {
             {scoreReasons.length > 0 && <div className="mt-1">Reason(s): {scoreReasons.join(', ')}</div>}
             {encounter.finalized_at && <div className="mt-1 text-green-700">Finalized by {encounter.finalized_by || 'Unknown'} at {encounter.finalized_at}</div>}
           </div>
-        </section>
+        </motion.section>
 
-        <section className="bg-white border border-neutral-200 rounded-2xl p-5">
+        <motion.section
+          className="bg-white border border-neutral-200 rounded-2xl p-5"
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.1 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+        >
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-neutral-800">Triage Document</h2>
             <div className="flex items-center gap-2">
@@ -396,7 +409,7 @@ export default function Triage() {
           ) : (
             <p className="text-sm text-neutral-500">Save, then click Refresh to generate triage documentation PDF.</p>
           )}
-        </section>
+        </motion.section>
       </main>
     </div>
   )
