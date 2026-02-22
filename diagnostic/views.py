@@ -183,7 +183,69 @@ def export_emr(request, pk):
         'export_id': export.id,
         'status': export.status,
         'payload': payload,
+def _generate_patient_id():
+    import random
+    return str(random.randint(1000000000, 9999999999))
+def recorded_patients_create(request):
+    """Create a recorded patient (from Synapse web or API)."""
+    data = request.data or {}
+    external_id = data.get('id') or _generate_patient_id()
+    name = (data.get('name') or '').strip() or 'Unknown'
+    age = (data.get('age') or '').strip()
+    payload = {k: v for k, v in data.items() if k not in ('id', 'name', 'age')}
+    if not payload.get('createdAt'):
+        from django.utils import timezone
+        payload['createdAt'] = timezone.now().isoformat()
+    patient = RecordedPatient.objects.create(
+        external_id=external_id,
+        name=name,
+        age=age,
+        source='synapse',
+        payload=payload,
+    )
+    return Response({
+        'id': patient.external_id,
+        'name': patient.name,
+        'age': patient.age,
+        'createdAt': patient.created_at.isoformat(),
+        **patient.payload,
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def recorded_patients_list(request):
+    """List recorded patients (Synapse + Twilio). Same shape as frontend expects."""
+    patients = RecordedPatient.objects.all()[:100]
+    out = []
+    for p in patients:
+        out.append({
+            'id': p.external_id,
+            'name': p.name or 'Unknown',
+            'age': p.age or '',
+            'createdAt': p.created_at.isoformat() if p.created_at else '',
+            **p.payload,
+        })
+    return Response(out)
+
+
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def recorded_patient_delete(request, external_id):
+    """Delete a recorded patient by external_id."""
+    try:
+        patient = RecordedPatient.objects.get(external_id=external_id)
+    except RecordedPatient.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+    patient.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['POST'])

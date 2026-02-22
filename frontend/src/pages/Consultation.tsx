@@ -64,6 +64,7 @@ export default function Consultation() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [now, setNow] = useState(() => new Date())
+  const [documentText, setDocumentText] = useState('')
   const [symptoms, setSymptoms] = useState<string[]>([])
   const [diagnosis, setDiagnosis] = useState<string[]>([])
   const [meds, setMeds] = useState<string[]>([])
