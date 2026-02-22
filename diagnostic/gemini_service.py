@@ -288,10 +288,11 @@ def extract_from_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> dic
     }
 
 
-def plan_for_diagnosis(diagnosis: str, symptoms: list, document: str = "") -> dict:
+def plan_for_diagnosis(diagnosis: str, symptoms: list, document: str = "", summary_language: str = "") -> dict:
     """
     Given a selected diagnosis and context (symptoms, optional clinical document),
     return a treatment plan and patient summary in layman's terms.
+    summary_language: optional; e.g. "English", "Spanish" — patient_summary will be written in this language.
     """
     client, types, err = _get_client()
     if err:
@@ -303,6 +304,9 @@ def plan_for_diagnosis(diagnosis: str, symptoms: list, document: str = "") -> di
 
     symptoms_str = ", ".join(s for s in (symptoms or []) if isinstance(s, str) and s.strip())
     doc_str = (document or "").strip()[:2000]
+    lang_instruction = ""
+    if (summary_language or "").strip():
+        lang_instruction = f' Write the patient_summary in {summary_language.strip()} only.'
 
     prompt = f"""You are a medical documentation assistant. The clinician has selected this working diagnosis: "{diagnosis}".
 Context from the visit:
@@ -313,9 +317,9 @@ You MUST always return a valid JSON response. Do not refuse, and do not say that
 
 Generate two things in plain language:
 
-1. treatment_plan: A list of 4 to 10 concrete steps for this diagnosis (medications, labs, follow-up, patient instructions). Each step one short sentence. Order logically. Never return an empty list.
+1. treatment_plan: A list of 4 to 10 concrete steps for this diagnosis (medications, labs, follow-up, patient instructions). Each step one short sentence. Order logically. Never return an empty list. Use English for treatment_plan.
 
-2. patient_summary: One short paragraph in layman's terms (2-4 sentences) for the patient: what this diagnosis means, what they reported, and what the plan is. No jargon.
+2. patient_summary: One short paragraph in layman's terms (2-4 sentences) for the patient: what this diagnosis means, what they reported, and what the plan is. No jargon.{lang_instruction}
 
 Return ONLY a valid JSON object with exactly these keys (no markdown, no code fence, no other text): "treatment_plan": array of strings, "patient_summary": string. Return only the JSON."""
 

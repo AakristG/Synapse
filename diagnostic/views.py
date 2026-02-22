@@ -388,7 +388,8 @@ def clinical_plan_for_diagnosis(request):
     if not isinstance(symptoms, list):
         symptoms = []
     document = (data.get('document') or '').strip()
-    result = plan_for_diagnosis(diagnosis, symptoms, document)
+    summary_language = (data.get('summary_language') or data.get('language') or '').strip()
+    result = plan_for_diagnosis(diagnosis, symptoms, document, summary_language)
     plan = result.get('treatment_plan') or []
     summary = (result.get('patient_summary') or '').strip()
     if result.get('error'):

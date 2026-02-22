@@ -117,10 +117,15 @@ export const api = {
   summarize: (id: string) => request(`/conversations/${id}/summarize/`, { method: 'POST' }),
   exportEmr: (id: string, body: Record<string, unknown> = {}) =>
     request(`/conversations/${id}/export-emr/`, { method: 'POST', body: JSON.stringify(body) }),
-  planForDiagnosis: (diagnosis: string, symptoms: string[] = [], document = '') =>
+  planForDiagnosis: (diagnosis: string, symptoms: string[] = [], document = '', summaryLanguage = '') =>
     request('/clinical/plan-for-diagnosis/', {
       method: 'POST',
-      body: JSON.stringify({ diagnosis, symptoms, document }),
+      body: JSON.stringify({
+        diagnosis,
+        symptoms,
+        document,
+        ...(summaryLanguage.trim() ? { summary_language: summaryLanguage.trim() } : {}),
+      }),
     }),
   translateDocument: (document: string, targetLanguage: string) =>
     request('/clinical/translate-document/', {

@@ -30,6 +30,17 @@ import axxessLogo from '../assets/axxess-logo.png'
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 const CONSULTATION_SESSION_KEY = 'synapse_consultation_session'
 
+const PATIENT_SUMMARY_LANGUAGES = [
+  { value: 'English', label: 'English' },
+  { value: 'Spanish', label: 'Spanish' },
+  { value: 'French', label: 'French' },
+  { value: 'Hindi', label: 'Hindi' },
+  { value: 'Arabic', label: 'Arabic' },
+  { value: 'Chinese', label: 'Chinese' },
+  { value: 'Portuguese', label: 'Portuguese' },
+  { value: 'German', label: 'German' },
+] as const
+
 /** Browser SpeechRecognition instance (Web Speech API; not in all TS DOM libs) */
 type SpeechRecognitionInstance = InstanceType<NonNullable<typeof window.SpeechRecognition>> extends infer T ? T : { start(): void; stop(): void }
 
@@ -133,6 +144,7 @@ export default function Consultation() {
   const [typedMessage, setTypedMessage] = useState('')
   const [isSendingText, setIsSendingText] = useState(false)
   const [responseLanguage, setResponseLanguage] = useState('')
+  const [summaryLanguage, setSummaryLanguage] = useState<string>('English')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -283,7 +295,7 @@ export default function Consultation() {
     let cancelled = false
     setPlanForDiagnosisLoading(true)
     api
-      .planForDiagnosis(selectedDiagnosis, symptoms, documentFromTranscript)
+      .planForDiagnosis(selectedDiagnosis, symptoms, documentFromTranscript, summaryLanguage)
       .then((res) => {
         if (cancelled) return
         setTreatmentPlanForSelection((res.treatment_plan as string[]) || [])
@@ -300,7 +312,7 @@ export default function Consultation() {
         if (!cancelled) setPlanForDiagnosisLoading(false)
       })
     return () => { cancelled = true }
-  }, [selectedDiagnosis, symptoms, documentFromTranscript])
+  }, [selectedDiagnosis, symptoms, documentFromTranscript, summaryLanguage])
 
   const startSession = useCallback(() => {
     chunksRef.current = []
@@ -867,8 +879,18 @@ export default function Consultation() {
             </div>
           )}
           <div className="flex-1 min-w-[280px] flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
+            <div className="px-5 py-3 border-b border-neutral-100 shrink-0 flex items-center justify-between gap-3 flex-wrap">
               <h3 className="text-sm font-bold text-neutral-800">Summary for Patient</h3>
+              <select
+                value={summaryLanguage}
+                onChange={(e: ChangeEvent<HTMLSelectElement>) => setSummaryLanguage(e.target.value)}
+                className="text-xs font-bold text-neutral-700 bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                aria-label="Summary language"
+              >
+                {PATIENT_SUMMARY_LANGUAGES.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
             <div className="px-6 py-4 flex flex-col items-center justify-center">
               <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group w-full max-w-2xl text-center">
