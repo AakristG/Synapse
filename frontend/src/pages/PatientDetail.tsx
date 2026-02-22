@@ -718,7 +718,7 @@ export default function PatientDetail() {
                 </button>
               </div>
               <p className="text-sm text-neutral-600 mb-3">
-                Describe the change you want (e.g. &quot;Add hypertension to diagnosis&quot;, &quot;Update age to 52&quot;). Synapse will update this patient&apos;s record.
+                Describe the change you want (e.g. &quot;Add hypertension to diagnosis&quot;, &quot;Update age to 52&quot;). You can type in any language. Synapse will update this patient&apos;s record.
               </p>
               <form
                 onSubmit={(e) => { e.preventDefault(); handleSendEdit() }}
@@ -727,7 +727,7 @@ export default function PatientDetail() {
                 <textarea
                   value={editMessage}
                   onChange={(e) => setEditMessage(e.target.value)}
-                  placeholder="e.g. Add chest pain to symptoms, or update treatment plan..."
+                  placeholder="e.g. Add chest pain to symptoms, or type in Spanish, French, etc...."
                   disabled={isSendingEdit}
                   rows={3}
                   className="w-full px-4 py-3 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50 resize-y"

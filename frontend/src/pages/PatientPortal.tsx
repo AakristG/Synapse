@@ -147,7 +147,7 @@ export default function PatientPortal() {
           <div className="px-6 py-4 border-b border-neutral-100">
             <h2 className="font-bold text-neutral-800">Ask Synapse</h2>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Request your document or care information by typing or using the microphone.
+              Request your document or care information. You can type or speak in any language.
             </p>
           </div>
           <div className="flex-1 min-h-0 flex flex-col bg-neutral-50/80">
@@ -205,7 +205,7 @@ export default function PatientPortal() {
                   type="text"
                   value={typedMessage}
                   onChange={(e) => setTypedMessage(e.target.value)}
-                  placeholder="Type to ask Synapse for your document..."
+                  placeholder="Type or speak in any language to ask Synapse..."
                   disabled={isProcessing || isRecording}
                   className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50"
                 />

@@ -46,7 +46,7 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple
     if err:
         return "", err
 
-    prompt = """Transcribe this audio word for word. The audio may be in any language (e.g. English, Spanish, French, Hindi). Output in the same language as spoken. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
+    prompt = """Transcribe this audio word for word. The audio may be in ANY language (e.g. English, Spanish, French, Hindi, Arabic, Chinese, Portuguese). You MUST transcribe in the same language as spoken—do not translate to English. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
 
     models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     for model_name in models_to_try:
@@ -109,7 +109,11 @@ OTHER PATIENT QUESTIONS: If the physician asks about a specific patient by name 
 If the message is not about loading data or looking up a patient, proceed with normal extraction.
 """
 
-    prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript. It may contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
+    prompt = """You are a medical documentation assistant. Below is a physician's dictation transcript.
+
+MULTILINGUAL INPUT: The transcript may be in ANY language (e.g. English, Spanish, French, Hindi, Arabic, Chinese, Portuguese). You MUST correctly interpret the meaning and extract clinical information regardless of the input language. Do not ignore or misinterpret non-English input.
+
+The transcript may also contain speech-recognition or dictation errors (misspellings, homophones, unclear words).
 
 STRICT RULES — you must follow these exactly:
 - Extract ONLY what is explicitly stated or clearly intended in the transcript (and previous context if provided). Do not infer diagnoses or add information the physician did not say.
