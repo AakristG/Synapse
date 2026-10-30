@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Mic, Square, Send, LogOut } from 'lucide-react'
+import { Mic, Square, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '../api'
-import axxessLogo from '../assets/axxess-logo.png'
+import AppHeader from '../components/AppHeader'
 
 type TranscriptLine = { speaker: string; text: string }
 
@@ -74,7 +74,7 @@ export default function PatientPortal() {
           if (e.data.size) chunksRef.current.push(e.data)
         }
         mr.onstop = () => stream.getTracks().forEach((t) => t.stop())
-        mr.start()
+        mr.start(250)
         setIsRecording(true)
         toast.info('Recording started. Speak your request, then stop.')
       })
@@ -89,23 +89,33 @@ export default function PatientPortal() {
       } catch {}
       speechRecognitionRef.current = null
     }
-    mediaRecorderRef.current.stop()
     setIsRecording(false)
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
     const liveTranscript = (speechTranscriptRef.current || '').trim()
     const previousContext = transcript.map((l) => `${l.speaker}: ${l.text}`).join('\n\n').trim()
-    setIsProcessing(true)
-    toast.info(liveTranscript ? 'Sending your request...' : 'Processing recording...')
-    api
-      .extractAudio(blob, previousContext, liveTranscript)
-      .then((data: Record<string, unknown>) => {
-        const userLine = (data.transcript as string) || liveTranscript || 'Recording'
-        const reply = (data.document as string) || (data.question as string) || 'Request received.'
-        appendReply(userLine, reply)
-        toast.success('Synapse replied.')
-      })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Request failed.'))
-      .finally(() => setIsProcessing(false))
+    const mr = mediaRecorderRef.current
+    const cleanup = mr.onstop
+    // Recorded data arrives asynchronously: build the blob only after the recorder has fully stopped.
+    mr.onstop = (ev) => {
+      cleanup?.call(mr, ev)
+      const blob = new Blob(chunksRef.current, { type: (mr.mimeType || 'audio/webm').split(';')[0] })
+      if (blob.size < 1000) {
+        toast.error('No audio was captured. Check your microphone and try again.')
+        return
+      }
+      setIsProcessing(true)
+      toast.info(liveTranscript ? 'Sending your request...' : 'Processing recording...')
+      api
+        .extractAudio(blob, previousContext, liveTranscript)
+        .then((data: Record<string, unknown>) => {
+          const userLine = (data.transcript as string) || liveTranscript || 'Recording'
+          const reply = (data.document as string) || (data.question as string) || 'Request received.'
+          appendReply(userLine, reply)
+          toast.success('Synapse replied.')
+        })
+        .catch((err) => toast.error(err instanceof Error ? err.message : 'Request failed.'))
+        .finally(() => setIsProcessing(false))
+    }
+    mr.stop()
   }, [isRecording, transcript, appendReply])
 
   const sendTypedMessage = useCallback(() => {
@@ -126,27 +136,14 @@ export default function PatientPortal() {
   }, [typedMessage, transcript, isProcessing, isRecording, appendReply])
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900 phase-in">
-      <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-6 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <img src={axxessLogo} alt="Axxess" className="h-8 w-auto object-contain" />
-          <span className="text-black font-medium">Welcome, {user?.username ?? 'User'}</span>
-        </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-all"
-        >
-          <LogOut size={18} />
-          Log out
-        </button>
-      </header>
+    <div className="flex flex-col h-screen overflow-hidden text-slate-900">
+      <AppHeader username={user?.username} onLogout={logout} />
 
-      <main className="flex-1 flex flex-col overflow-hidden p-6">
-        <div className="flex-1 min-h-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-neutral-100">
-            <h2 className="font-bold text-neutral-800">Ask Synapse</h2>
-            <p className="text-xs text-neutral-500 mt-0.5">
+      <main className="flex-1 flex flex-col overflow-hidden p-4 lg:p-5">
+        <div className="flex-1 min-h-0 flex flex-col bg-white rounded-3xl border border-slate-200/80 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.45)] overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-900">Ask Synapse</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
               Request your document or care information. You can type or speak in any language.
             </p>
           </div>
@@ -163,7 +160,7 @@ export default function PatientPortal() {
                   <div
                     className={`max-w-[85%] p-3 rounded-xl text-sm ${
                       line.speaker === 'You'
-                        ? 'bg-red-50 border border-red-100 text-red-900'
+                        ? 'bg-rose-50 border border-rose-100 text-rose-900'
                         : 'bg-white border border-neutral-100 text-neutral-800 shadow-sm'
                     }`}
                   >
@@ -186,7 +183,7 @@ export default function PatientPortal() {
                     type="button"
                     onClick={startRecording}
                     disabled={isProcessing}
-                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-red-100 text-red-600 hover:bg-red-200 disabled:opacity-50 transition-all"
+                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-rose-100 text-rose-600 hover:bg-rose-200 disabled:opacity-50 transition-all"
                     title="Use microphone"
                   >
                     <Mic size={20} />
@@ -195,7 +192,7 @@ export default function PatientPortal() {
                   <button
                     type="button"
                     onClick={stopRecording}
-                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-red-600 text-white animate-pulse"
+                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-rose-800 text-white animate-pulse"
                     title="Stop and send"
                   >
                     <Square size={18} fill="currentColor" />
@@ -207,12 +204,12 @@ export default function PatientPortal() {
                   onChange={(e) => setTypedMessage(e.target.value)}
                   placeholder="Type or speak in any language to ask Synapse..."
                   disabled={isProcessing || isRecording}
-                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50"
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 disabled:opacity-50"
                 />
                 <button
                   type="submit"
                   disabled={!typedMessage.trim() || isProcessing || isRecording}
-                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-all"
+                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-rose-800 text-white rounded-xl text-sm font-bold hover:bg-rose-900 disabled:opacity-50 transition-all"
                 >
                   <Send size={18} />
                   Send

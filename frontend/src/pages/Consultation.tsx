@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Plus,
   User,
-  LogOut,
   Send,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -25,7 +24,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { api, formatPatientsContext } from '../api'
 import type { StoredPatient } from './PatientDetail'
-import axxessLogo from '../assets/axxess-logo.png'
+import AppHeader from '../components/AppHeader'
 
 const PATIENTS_STORAGE_KEY = 'synapse_patients'
 const CONSULTATION_SESSION_KEY = 'synapse_consultation_session'
@@ -128,6 +127,7 @@ export default function Consultation() {
   const [isRecording, setIsRecording] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
   const [transcript, setTranscript] = useState<TranscriptLine[]>(() => {
     const s = loadConsultationSession()
     return s?.transcript?.length ? s.transcript : [{ speaker: 'Synapse', text: INITIAL_AI_MESSAGE }]
@@ -345,13 +345,42 @@ export default function Consultation() {
     navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((stream) => {
-        const mr = new MediaRecorder(stream)
+        const preferred = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
+        const mimeType = preferred.find((t) => MediaRecorder.isTypeSupported(t))
+        const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
         mediaRecorderRef.current = mr
         mr.ondataavailable = (e) => {
           if (e.data.size) chunksRef.current.push(e.data)
         }
-        mr.onstop = () => stream.getTracks().forEach((t) => t.stop())
-        mr.start()
+
+        // Live mic level meter so the user can see audio is being captured.
+        const AudioCtx = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        let audioCtx: AudioContext | null = null
+        let raf = 0
+        if (AudioCtx) {
+          audioCtx = new AudioCtx()
+          const analyser = audioCtx.createAnalyser()
+          analyser.fftSize = 512
+          audioCtx.createMediaStreamSource(stream).connect(analyser)
+          const data = new Uint8Array(analyser.fftSize)
+          const tick = () => {
+            analyser.getByteTimeDomainData(data)
+            let peak = 0
+            for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs((data[i] ?? 128) - 128))
+            setMicLevel(Math.min(1, peak / 64))
+            raf = requestAnimationFrame(tick)
+          }
+          tick()
+        }
+
+        mr.onstop = () => {
+          cancelAnimationFrame(raf)
+          setMicLevel(0)
+          void audioCtx?.close()
+          stream.getTracks().forEach((t) => t.stop())
+        }
+        // timeslice makes the browser emit data regularly instead of only at stop.
+        mr.start(250)
         setIsRecording(true)
         toast.info('Microphone active — recording started.')
       })
@@ -359,24 +388,32 @@ export default function Consultation() {
   }, [])
 
   const stopRecording = useCallback(() => {
-    if (!mediaRecorderRef.current || !isRecording) return
+    const mr = mediaRecorderRef.current
+    if (!mr || !isRecording) return
     if (speechRecognitionRef.current) {
       try { speechRecognitionRef.current.stop() } catch {}
       speechRecognitionRef.current = null
     }
-    mediaRecorderRef.current.stop()
     setIsRecording(false)
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
     const liveTranscript = (speechTranscriptRef.current || '').trim()
     const previousContext = transcript
       .map((l) => `${l.speaker}: ${l.text}`)
       .join('\n\n')
       .trim()
     const append = previousContext.length > 0
-    setIsProcessing(true)
-    toast.info(liveTranscript ? 'Sending your words to Synapse...' : 'Creating transcript from your recording...')
     const patientsContext = formatPatientsContext(patients)
-    const send = () => {
+
+    // Recorded data is delivered asynchronously: build the blob only after the recorder has fully stopped.
+    const cleanup = mr.onstop
+    mr.onstop = (ev) => {
+      cleanup?.call(mr, ev)
+      const blob = new Blob(chunksRef.current, { type: (mr.mimeType || 'audio/webm').split(';')[0] })
+      if (blob.size < 1000) {
+        toast.error('No audio was captured. Check your microphone and record a few seconds of speech.')
+        return
+      }
+      setIsProcessing(true)
+      toast.info(liveTranscript ? 'Sending your words to Synapse...' : `Creating transcript from your recording (${Math.round(blob.size / 1024)} KB)...`)
       api.extractAudio(blob, previousContext, liveTranscript, patientsContext, responseLanguage)
         .then((data) => {
           applyExtractionResult(data as ExtractionResult, { append, currentTranscript: transcript })
@@ -385,8 +422,7 @@ export default function Consultation() {
         .catch((err) => toast.error(err instanceof Error ? err.message : 'Transcription failed.'))
         .finally(() => setIsProcessing(false))
     }
-    if (liveTranscript) setTimeout(send, 300)
-    else send()
+    mr.stop()
   }, [isRecording, transcript, patients, responseLanguage, applyExtractionResult])
 
   const handleFileUpload = useCallback(
@@ -487,67 +523,44 @@ export default function Consultation() {
   }, [symptoms, diagnosis, meds])
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-50 overflow-hidden font-sans text-neutral-900 phase-in">
-      <header className="h-16 shrink-0 border-b border-neutral-200 bg-white px-8 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <img src={axxessLogo} alt="Axxess" className="h-8 w-auto object-contain" />
-          <span className="text-black font-medium">
-            Welcome, {user?.username ?? 'User'}
-          </span>
+    <div className="flex flex-col h-screen overflow-hidden text-slate-900">
+      <AppHeader
+        username={user?.username}
+        onLogout={() => { logout(); navigate('/login', { replace: true }) }}
+      >
+        <div className="hidden md:flex items-center gap-2 text-slate-500 text-xs font-medium tabular-nums">
+          <Clock size={14} />
+          {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <span className="text-slate-300">·</span>
+          {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-neutral-500 font-bold text-xs uppercase tracking-widest">
-                <Clock size={14} />
-                {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • {now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </div>
-              <a
-                href="#medical-summary"
-                onClick={(e) => {
-                  e.preventDefault()
-                  document.getElementById('medical-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }}
-                className="text-sm font-bold text-neutral-700 hover:text-red-600  transition-colors"
-              >
-                Medical Summary
-              </a>
-              <a
-                href="#patient-information"
-                onClick={(e) => {
-                  e.preventDefault()
-                  document.getElementById('patient-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }}
-                className="text-sm font-bold text-neutral-700 hover:text-red-600 transition-colors"
-              >
-                Patient Information
-              </a>
-            </div>
-            {/* ER Triage — commented out
-            <Link
-              to="/triage"
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-neutral-700 hover:bg-neutral-100 border border-neutral-200 transition-all"
-            >
-              <Activity size={18} />
-              ER Triage
-            </Link>
-            */}
-            <button
-              type="button"
-              onClick={() => { logout(); navigate('/login', { replace: true }) }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 transition-all"
-          >
-            <LogOut size={18} />
-            Log out
-          </button>
-        </div>
-      </header>
+        <a
+          href="#medical-summary"
+          onClick={(e) => {
+            e.preventDefault()
+            document.getElementById('medical-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+          className="hidden lg:inline text-sm font-medium text-slate-600 hover:text-rose-800 transition-colors"
+        >
+          Summary
+        </a>
+        <a
+          href="#patient-information"
+          onClick={(e) => {
+            e.preventDefault()
+            document.getElementById('patient-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }}
+          className="hidden lg:inline text-sm font-medium text-slate-600 hover:text-rose-800 transition-colors"
+        >
+          Patients
+        </a>
+      </AppHeader>
 
-      <main className="flex-1 flex flex-col overflow-auto p-6 gap-30 min-h-0 phase-in-stagger">
-        <div className="flex min-h-[50vh] shrink-0 gap-6">
-        <section className="flex-1 min-w-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden relative min-h-0">
+      <main className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_400px] gap-4 p-4 lg:p-5 overflow-auto xl:overflow-hidden">
+        <section className="min-w-0 min-h-[560px] xl:min-h-0 flex flex-col bg-white rounded-3xl border border-slate-200/80 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.45)] overflow-hidden relative">
           <div className="px-8 py-5 border-b border-neutral-100 flex items-center justify-between bg-white z-10">
             <div className="flex items-center gap-4">
-              <div className={`p-2 rounded-lg ${isRecording ? 'bg-red-50 text-red-600' : 'bg-red-50 text-red-600'}`}>
+              <div className={`p-2 rounded-lg ${isRecording ? 'bg-rose-50 text-rose-800' : 'bg-rose-50 text-rose-800'}`}>
                 <Mic size={20} />
               </div>
               <div>
@@ -579,19 +592,30 @@ export default function Consultation() {
                 <button
                   onClick={startSession}
                   disabled={isUploading}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 group"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-rose-800 text-white rounded-xl font-bold shadow-lg shadow-rose-100 hover:bg-rose-900 transition-all active:scale-95 disabled:opacity-50 group"
                 >
                   <Zap size={18} className="group-hover:animate-pulse" strokeWidth={2.5} />
                   Start Listening
                 </button>
               ) : (
+                <>
+                <div className="flex items-center gap-2" title="Live microphone level">
+                  <Mic size={16} className="text-rose-800" />
+                  <div className="h-2 w-28 rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-[width] duration-75"
+                      style={{ width: `${Math.round(micLevel * 100)}%` }}
+                    />
+                  </div>
+                </div>
                 <button
                   onClick={stopRecording}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-100 hover:bg-red-700 transition-all active:scale-95 animate-pulse"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-rose-800 text-white rounded-xl font-bold shadow-lg shadow-rose-100 hover:bg-rose-900 transition-all active:scale-95 animate-pulse"
                 >
                   <Square size={18} fill="currentColor" />
                   Stop & Transcribe
                 </button>
+                </>
               )}
             </div>
           </div>
@@ -612,8 +636,8 @@ export default function Consultation() {
                 )}
                 {isRecording && transcript.length === 0 && (
                   <div key="recording" className="min-h-[200px] flex flex-col items-center justify-center py-8 text-neutral-500">
-                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-4 animate-pulse">
-                      <Mic size={28} className="text-red-600" />
+                    <div className="w-16 h-16 rounded-full bg-rose-100 flex items-center justify-center mb-4 animate-pulse">
+                      <Mic size={28} className="text-rose-800" />
                     </div>
                     <p className="font-bold text-neutral-700">Recording in progress</p>
                     <p className="text-xs mt-1">Click &quot;Stop & Transcribe&quot; when done to generate the transcript.</p>
@@ -622,8 +646,8 @@ export default function Consultation() {
                 {(isUploading || isProcessing) && (
                   <div key="processing" className="min-h-[200px] flex flex-col items-center justify-center py-8">
                     <div className="relative">
-                      <Loader2 size={48} className="animate-spin text-red-200" />
-                      <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-600 animate-pulse" />
+                      <Loader2 size={48} className="animate-spin text-rose-200" />
+                      <Activity size={24} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-rose-800 animate-pulse" />
                     </div>
                     <p className="mt-4 font-bold text-neutral-600 tracking-tight">
                       {isSendingText ? 'Sending to Synapse...' : isProcessing ? 'Creating transcript from recording...' : 'Processing audio...'}
@@ -642,7 +666,7 @@ export default function Consultation() {
                       <div
                         className={`max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed relative ${
                           line.speaker === 'Clinician' /* TODO: change Clinician to username */
-                            ? 'bg-red-600 text-white rounded-tr-none shadow-xl shadow-red-100/50'
+                            ? 'bg-rose-800 text-white rounded-tr-none shadow-xl shadow-rose-100/50'
                             : line.speaker === 'Synapse AI'
                               ? 'bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-tl-none shadow-sm'
                               : 'bg-white border border-neutral-100 text-neutral-800 rounded-tl-none shadow-sm'
@@ -650,7 +674,7 @@ export default function Consultation() {
                       >
                         <div
                           className={`absolute top-0 ${line.speaker === 'Clinician' ? '-right-3' : '-left-3'} w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold shadow-sm ${
-                            line.speaker === 'Clinician' ? 'bg-red-700 text-red-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
+                            line.speaker === 'Clinician' ? 'bg-rose-700 text-rose-50' : line.speaker === 'Synapse' ? 'bg-emerald-600 text-white' : 'bg-neutral-800 text-white'
                           }`}
                         >
                           {line.speaker === 'Synapse' ? 'S' : line.speaker.charAt(0)}
@@ -676,7 +700,7 @@ export default function Consultation() {
                   id="response-language"
                   value={responseLanguage}
                   onChange={(e) => setResponseLanguage(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                  className="px-3 py-1.5 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
                 >
                   <option value="">Auto (same as input)</option>
                   <option value="English">English</option>
@@ -699,12 +723,12 @@ export default function Consultation() {
                   onChange={(e) => setTypedMessage(e.target.value)}
                   placeholder="Type to Synapse AI (any language)..."
                   disabled={isProcessing || isRecording || isUploading}
-                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50"
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 disabled:opacity-50"
                 />
                 <button
                   type="submit"
                   disabled={!typedMessage.trim() || isProcessing || isRecording || isUploading}
-                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-all"
+                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-rose-800 text-white rounded-xl text-sm font-bold hover:bg-rose-900 disabled:opacity-50 transition-all"
                 >
                   <Send size={18} />
                   Send
@@ -713,9 +737,9 @@ export default function Consultation() {
             </div>
           </div>
         </section>
-        </div>
 
-        <div id="medical-summary" className="w-full shrink-0 flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
+        <aside className="min-h-0 xl:overflow-auto space-y-4 pr-0.5">
+        <div id="medical-summary" className="flex flex-col bg-white rounded-3xl border border-slate-200/80 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)] overflow-hidden">
           <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
             <h3 className="text-sm font-bold text-neutral-800">Medical Summary</h3>
           </div>
@@ -724,7 +748,7 @@ export default function Consultation() {
               <div className="min-w-[200px] flex-1 flex flex-col gap-6">
                 <section>
                   <div className="flex items-center gap-2 mb-4 text-neutral-800">
-                    <Activity size={16} className="text-red-600" strokeWidth={3} />
+                    <Activity size={16} className="text-rose-800" strokeWidth={3} />
                     <h4 className="text-sm font-bold tracking-tight">Identified Symptoms</h4>
                   </div>
                   <div className="flex flex-wrap gap-2.5">
@@ -737,7 +761,7 @@ export default function Consultation() {
                           className="px-3 py-2 bg-neutral-900 text-white text-[11px] font-bold rounded-xl flex items-center gap-2 border border-neutral-800 shadow-sm"
                         >
                           {tag}
-                          <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                          <div className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
                         </motion.span>
                       ))
                     ) : (
@@ -746,8 +770,8 @@ export default function Consultation() {
                   </div>
                 </section>
                 <section>
-                  <div className="flex items-center gap-2 mb-4 pt-10 text-neutral-800">
-                    <Stethoscope size={16} className="text-red-600" strokeWidth={3} />
+                  <div className="flex items-center gap-2 mb-4 mt-2 text-neutral-800">
+                    <Stethoscope size={16} className="text-rose-800" strokeWidth={3} />
                     <h4 className="text-sm font-bold tracking-tight">Possible Diagnosis (ICD-10-CM)</h4>
                   </div>
                   <div className="space-y-3">
@@ -763,19 +787,19 @@ export default function Consultation() {
                             tabIndex={0}
                             onClick={() => setSelectedDiagnosis(d)}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDiagnosis(d) } }}
-                            className={`p-4 rounded-2xl shadow-sm group transition-all cursor-pointer border-2 ${isSelected ? 'bg-red-100 border-red-600 ring-2 ring-red-200' : 'bg-red-50 border border-red-100 hover:bg-red-100 border-transparent'}`}
+                            className={`p-4 rounded-2xl shadow-sm group transition-all cursor-pointer border-2 ${isSelected ? 'bg-rose-100 border-rose-600 ring-2 ring-rose-200' : 'bg-rose-50 border border-rose-100 hover:bg-rose-100 border-transparent'}`}
                           >
                             <div className="flex items-start justify-between">
-                              <span className="text-xs font-bold text-red-900 leading-tight">{d}</span>
+                              <span className="text-xs font-bold text-rose-900 leading-tight">{d}</span>
                               {isSelected ? (
-                                <div className="bg-red-600 text-white p-1 rounded-lg" title="Selected — plan and summary reflect this diagnosis">
+                                <div className="bg-rose-800 text-white p-1 rounded-lg" title="Selected — plan and summary reflect this diagnosis">
                                   <CheckCircle2 size={14} fill="currentColor" />
                                 </div>
                               ) : (
-                                <span className="text-[10px] text-red-600 font-bold uppercase">Click to select</span>
+                                <span className="text-[10px] text-rose-800 font-bold uppercase">Click to select</span>
                               )}
                             </div>
-                            <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
+                            <p className="text-[10px] text-rose-800 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
                               <Zap size={10} fill="currentColor" />
                               {i === 0 ? 'Primary / from transcript' : 'Consider (from Synapse)'}
                             </p>
@@ -792,7 +816,7 @@ export default function Consultation() {
               </div>
               <section className="min-w-[200px] flex-1 flex flex-col items-center">
                 <div className="flex items-center gap-2 mb-4 text-neutral-800">
-                  <Pill size={16} className="text-red-600" strokeWidth={3} />
+                  <Pill size={16} className="text-rose-800" strokeWidth={3} />
                   <h4 className="text-sm font-bold tracking-tight">Treatment & Plan</h4>
                 </div>
                     <div className="space-y-3 w-full max-w-md flex flex-col items-center">
@@ -807,9 +831,9 @@ export default function Consultation() {
                             initial={{ y: 5, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             key={`med-${i}-${String(m).slice(0, 20)}`}
-                            className="p-4 bg-neutral-50 border border-neutral-100 rounded-2xl text-[13px] font-bold text-neutral-700 flex items-center gap-4 hover:border-red-200 transition-all"
+                            className="p-4 bg-neutral-50 border border-neutral-100 rounded-2xl text-[13px] font-bold text-neutral-700 flex items-center gap-4 hover:border-rose-200 transition-all"
                           >
-                            <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-neutral-100 flex items-center justify-center text-red-600">
+                            <div className="w-8 h-8 rounded-xl bg-white shadow-sm border border-neutral-100 flex items-center justify-center text-rose-800">
                               <Pill size={16} />
                             </div>
                             <div className="flex-1">
@@ -830,7 +854,7 @@ export default function Consultation() {
           </div>
         </div>
 
-        <div id="patient-information" className="w-full shrink-0 flex flex-wrap gap-6">
+        <div id="patient-information" className="flex flex-col gap-4">
           {patients.length > 0 && (
             <div className="flex-1 min-w-[280px] flex flex-col bg-white rounded-3xl border border-neutral-200 shadow-sm overflow-hidden">
               <div className="px-5 py-3 border-b border-neutral-100 shrink-0">
@@ -841,19 +865,19 @@ export default function Consultation() {
                   {patients.slice(0, 3).map((p) => (
                     <div
                       key={p.id}
-                      className="flex items-center gap-3 p-4 bg-white border border-neutral-200 rounded-xl hover:border-red-300 hover:bg-red-50/50 transition-all group"
+                      className="flex items-center gap-3 p-4 bg-white border border-neutral-200 rounded-xl hover:border-rose-300 hover:bg-rose-50/50 transition-all group"
                     >
                       <Link
                         to={`/patient/${p.id}`}
                         className="flex items-center gap-3 min-w-0 flex-1"
                       >
-                        <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600 shrink-0 group-hover:bg-red-200">
+                        <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-800 shrink-0 group-hover:bg-rose-200">
                           <User size={20} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="font-bold text-neutral-800 text-sm truncate">{p.name}</p>
                           <p className="text-xs text-neutral-500">
-                            {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-red-600">#{p.id}</span>
+                            {p.age ? `${p.age} years` : 'Age not stated'} · <span className="font-mono font-bold text-rose-800">#{p.id}</span>
                           </p>
                         </div>
                         <ChevronRight size={16} className="text-neutral-300 shrink-0" />
@@ -861,7 +885,7 @@ export default function Consultation() {
                       <button
                         type="button"
                         onClick={(e) => removePatient(p.id, e)}
-                        className="shrink-0 p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        className="shrink-0 p-2 rounded-lg text-neutral-400 hover:text-rose-800 hover:bg-rose-50 transition-colors"
                         title="Delete patient"
                       >
                         <Trash2 size={16} />
@@ -871,7 +895,7 @@ export default function Consultation() {
                 </div>
                 <Link
                   to="/patients"
-                  className="mt-3 inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-xl font-bold text-[12px] transition-all"
+                  className="mt-3 inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-white border border-rose-200 text-rose-800 hover:bg-rose-50 rounded-xl font-bold text-[12px] transition-all"
                 >
                   View All Patients
                 </Link>
@@ -884,7 +908,7 @@ export default function Consultation() {
               <select
                 value={summaryLanguage}
                 onChange={(e: ChangeEvent<HTMLSelectElement>) => setSummaryLanguage(e.target.value)}
-                className="text-xs font-bold text-neutral-700 bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                className="text-xs font-bold text-neutral-700 bg-neutral-100 border border-neutral-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
                 aria-label="Summary language"
               >
                 {PATIENT_SUMMARY_LANGUAGES.map(({ value, label }) => (
@@ -892,8 +916,8 @@ export default function Consultation() {
                 ))}
               </select>
             </div>
-            <div className="px-6 py-4 flex flex-col items-center justify-center">
-              <div className="p-5 bg-neutral-900 rounded-2xl text-white shadow-lg relative overflow-hidden group w-full max-w-2xl text-center">
+            <div className="px-5 py-4">
+              <div className="p-5 bg-slate-900 rounded-2xl text-white shadow-lg relative overflow-hidden w-full text-left">
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                   <ClipboardList size={80} />
                 </div>
@@ -911,9 +935,8 @@ export default function Consultation() {
             </div>
           </div>
         </div>
+        </aside>
       </main>
-
-      <footer className="h-10 shrink-0 bg-white border-t border-neutral-200 z-20" />
     </div>
   )
 }

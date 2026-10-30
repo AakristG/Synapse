@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f8fafc;
+  --bg: #eef2f6;
   --fg: #0f172a;
   --muted: #64748b;
   --border: #e2e8f0;
   --card: #ffffff;
-  --primary: #b91c1c;
+  --primary: #9f1239;
 }
 
 * {
@@ -15,12 +15,32 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: var(--bg);
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, sans-serif;
+  background:
+    radial-gradient(1200px 500px at 100% -10%, rgba(159, 18, 57, 0.08), transparent 55%),
+    radial-gradient(900px 420px at -10% 0%, rgba(15, 118, 110, 0.08), transparent 50%),
+    var(--bg);
   color: var(--fg);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
   min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.page-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-weight: 500;
 }

@@ -14,10 +14,10 @@ const AllPatients = lazy(() => import('./pages/AllPatients.tsx'))
 
 function PageFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+    <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <div className="w-10 h-10 border-2 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-sm font-medium text-neutral-600">Loading...</p>
+        <div className="w-10 h-10 border-2 border-rose-800 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-sm font-medium text-slate-600">Loading...</p>
       </div>
     </div>
   )

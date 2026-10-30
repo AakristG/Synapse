@@ -1,5 +1,23 @@
-from django.db import models
+"""
+This file defines the database models for a healthcare application that I created for AXCESS and 
+presented to the mayor of Richardson, Texas.
+
+It manages:
+- User roles such as patient, EMT, nurse, and physician.
+- Healthcare conversations and their metadata.
+- Conversation transcripts from patients, clinicians, and the system.
+- Structured clinical notes, including vitals, symptoms, diagnoses, and ICD codes.
+- Patient-friendly summaries, recovery plans, medications, and follow-up instructions.
+- EMR export records and their statuses.
+- Emergency triage encounters, including patient information, symptoms, vitals,
+  pain scores, GCS scores, red flags, triage levels, and dispositions.
+- Triage event history for tracking changes, reassessments, handoffs, and finalization.
+
+The Conversation model acts as the central model, with transcripts, clinical notes, patient summaries,
+triage, etc encounters linked to it.
+"""
 from django.conf import settings
+from django.db import models
 
 
 class UserProfile(models.Model):
@@ -41,7 +59,7 @@ class Conversation(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-created_at']  # noqa: RUF012
 
 
 class Transcript(models.Model):

@@ -19,6 +19,30 @@ def _get_client():
         return None, None, "gemini not installed"
 
 
+# Prefer current Flash models. Gemini 2.5 Flash access is restricted and is
+# scheduled to retire; fall through if a newer model is unavailable for this key.
+GEMINI_MODELS = ("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
+
+
+def _generate_text(client, contents) -> tuple[str, str]:
+    """Call Gemini, trying current models in order. Returns (text, error)."""
+    last_err = "No model available"
+    for model_name in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+            )
+            text = (getattr(response, "text", None) or "").strip()
+            return text, ""
+        except Exception as e:
+            last_err = str(e).strip() or "Unknown Gemini error"
+            logger.warning("Gemini generate_content failed with %s: %s", model_name, last_err)
+            continue
+    logger.error("Gemini generate_content exhausted models: %s", last_err)
+    return "", last_err
+
+
 def _empty_result(error_msg=""):
     return {
         "error": error_msg,
@@ -48,29 +72,19 @@ def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> tuple
 
     prompt = """Transcribe this audio word for word. The audio may be in ANY language (e.g. English, Spanish, French, Hindi, Arabic, Chinese, Portuguese). You MUST transcribe in the same language as spoken—do not translate to English. Output ONLY the exact words spoken — nothing else. No summary, no JSON, no labels. If you cannot make out words, use [unclear]. If there is silence, you may say [silence] or leave it blank. Do not add any patient names, diagnoses, or details that are not clearly spoken in the audio."""
 
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    for model_name in models_to_try:
-        try:
-            audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
-            text_part = types.Part.from_text(text=prompt)
-            user_content = types.UserContent([audio_part, text_part])
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[user_content],
-            )
-            text = (getattr(response, "text", None) or "").strip()
-            if text.startswith("```"):
-                text = re.sub(r"^```\w*\n?", "", text)
-                text = re.sub(r"\n?```\s*$", "", text)
-            return text.strip(), ""
-        except Exception as e:
-            err_msg = str(e).strip() or "Unknown Gemini error"
-            logger.warning("Gemini transcribe_audio failed with %s: %s", model_name, err_msg)
-            if model_name == models_to_try[-1]:
-                logger.exception("Gemini transcribe_audio failed: %s", e)
-                return "", err_msg
-            continue
-    return "", "No model available"
+    mime_type = (mime_type or "audio/webm").split(";")[0].strip() or "audio/webm"
+    logger.info("Gemini transcribe_audio request: mime=%r bytes=%d", mime_type, len(audio_bytes))
+    audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+    text_part = types.Part.from_text(text=prompt)
+    user_content = types.UserContent([audio_part, text_part])
+    text, err_msg = _generate_text(client, [user_content])
+    if err_msg:
+        logger.error("Gemini transcribe_audio failed: %s", err_msg)
+        return "", err_msg
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text)
+    return text.strip(), ""
 
 
 def intake_from_text(
@@ -147,15 +161,10 @@ Transcript to evaluate:
 """
     full_prompt = prompt + "\n" + (transcript_text or "").strip() + "\n\nReturn ONLY a valid JSON object with exactly these keys (no markdown, no code fence): \"missing\": [], \"question\": null, \"name\": string, \"age\": string, \"report\": string, \"vitals\": object, \"symptoms\": array of strings, \"diagnosis\": string, \"possible_diagnoses\": array of strings, \"treatment_plan\": array of strings (REQUIRED: must have at least 4 items), \"document\": string. Return only the JSON."
 
-    try:
-        user_content = types.UserContent(full_prompt)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[user_content],
-        )
-        text = (getattr(response, "text", None) or "").strip()
-    except Exception as e:
-        return _empty_result(str(e))
+    user_content = types.UserContent(full_prompt)
+    text, err_msg = _generate_text(client, [user_content])
+    if err_msg:
+        return _empty_result(err_msg)
 
     if text.startswith("```"):
         text = re.sub(r"^```\w*\n?", "", text)
@@ -233,6 +242,9 @@ def intake_from_audio(
     (2) Gemini evaluates that transcript only. So "Clinician" = exactly what the user said.
     Supports multilingual input; responses follow response_language or the language of the transcript.
     """
+    
+    print("mime:", repr(mime_type), "bytes:", len(audio_bytes))
+    
     # Step 1: Use client-provided transcript (e.g. from browser speech recognition) or transcribe audio
     if client_transcript and client_transcript.strip():
         transcript = client_transcript.strip()
@@ -323,15 +335,10 @@ Generate two things in plain language:
 
 Return ONLY a valid JSON object with exactly these keys (no markdown, no code fence, no other text): "treatment_plan": array of strings, "patient_summary": string. Return only the JSON."""
 
-    try:
-        user_content = types.UserContent(prompt)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[user_content],
-        )
-        text = (getattr(response, "text", None) or "").strip()
-    except Exception as e:
-        return {"error": str(e), "treatment_plan": [], "patient_summary": ""}
+    user_content = types.UserContent(prompt)
+    text, err_msg = _generate_text(client, [user_content])
+    if err_msg:
+        return {"error": err_msg, "treatment_plan": [], "patient_summary": ""}
 
     if text.startswith("```"):
         text = re.sub(r"^```\w*\n?", "", text)
@@ -403,16 +410,11 @@ Document to translate:
 
 Translated document in {target_language}:"""
 
-    try:
-        user_content = types.UserContent(prompt)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[user_content],
-        )
-        text = (getattr(response, "text", None) or "").strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```\s*$", "", text)
-        return {"translated": text.strip(), "error": ""}
-    except Exception as e:
-        return {"translated": "", "error": str(e)}
+    user_content = types.UserContent(prompt)
+    text, err_msg = _generate_text(client, [user_content])
+    if err_msg:
+        return {"translated": "", "error": err_msg}
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text)
+    return {"translated": text.strip(), "error": ""}

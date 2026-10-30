@@ -1,39 +1,46 @@
 import logging
 from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.utils import timezone
 
+from .gemini_service import (
+    intake_from_audio,
+    intake_from_text,
+    plan_for_diagnosis,
+    translate_document,
+)
 from .models import (
-    Conversation,
-    Transcript,
     ClinicalNote,
-    PatientSummary,
+    Conversation,
     EMRExport,
+    PatientSummary,
+    Transcript,
     TriageEncounter,
     TriageEvent,
 )
-from .gemini_service import intake_from_audio, intake_from_text, plan_for_diagnosis, translate_document
 from .serializers import (
-    ConversationSerializer,
-    TranscriptSerializer,
     ClinicalNoteSerializer,
+    ConversationSerializer,
     PatientSummarySerializer,
+    TranscriptSerializer,
     TriageEncounterSerializer,
 )
 from .services import (
+    build_emr_payload,
     generate_session_id,
-    transcribe_audio_stub,
-    summarize_and_extract_stub,
     map_icd_and_treatments_stub,
     patient_friendly_summary_stub,
-    build_emr_payload,
+    summarize_and_extract_stub,
+    transcribe_audio_stub,
 )
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def conversation_list(request):
     if request.method == 'GET':
         conversations = Conversation.objects.all()[:50]
@@ -53,6 +60,7 @@ def conversation_list(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def conversation_detail(request, pk):
     try:
         conv = Conversation.objects.get(pk=pk)
@@ -72,6 +80,7 @@ def conversation_detail(request, pk):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def add_transcript(request, pk):
     try:
         conv = Conversation.objects.get(pk=pk)
@@ -79,7 +88,9 @@ def add_transcript(request, pk):
         return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
     data = request.data or {}
     role = data.get('role', 'clinician')
-    text = data.get('text', '').strip()
+    if role not in ('patient', 'clinician', 'system'):
+        return Response({'detail': 'Invalid "role".'}, status=status.HTTP_400_BAD_REQUEST)
+    text = (data.get('text') or '').strip()
     if not text:
         return Response({'detail': 'Missing "text".'}, status=status.HTTP_400_BAD_REQUEST)
     transcript = Transcript.objects.create(
@@ -93,6 +104,7 @@ def add_transcript(request, pk):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def transcribe(request, pk):
     """Speech-to-Text: accept audio URL or raw text, append transcript to conversation."""
     try:
@@ -122,6 +134,7 @@ def _get_conversation_text(conv):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def summarize(request, pk):
     """AI-powered summarization: extract vitals, symptoms, diagnosis; ICD mapping; patient-friendly summary."""
     try:
@@ -170,6 +183,7 @@ def summarize(request, pk):
 
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def export_emr(request, pk):
     """Lightweight EMR export: create audit record and return payload for plug-in/API."""
     try:
@@ -198,64 +212,6 @@ def export_emr(request, pk):
     })
 
 
-def _generate_patient_id():
-    import random
-    return str(random.randint(1000000000, 9999999999))
-def recorded_patients_create(request):
-    """Create a recorded patient (from Synapse web or API)."""
-    data = request.data or {}
-    external_id = data.get('id') or _generate_patient_id()
-    name = (data.get('name') or '').strip() or 'Unknown'
-    age = (data.get('age') or '').strip()
-    payload = {k: v for k, v in data.items() if k not in ('id', 'name', 'age')}
-    if not payload.get('createdAt'):
-        from django.utils import timezone
-        payload['createdAt'] = timezone.now().isoformat()
-    patient = RecordedPatient.objects.create(
-        external_id=external_id,
-        name=name,
-        age=age,
-        source='synapse',
-        payload=payload,
-    )
-    return Response({
-        'id': patient.external_id,
-        'name': patient.name,
-        'age': patient.age,
-        'createdAt': patient.created_at.isoformat(),
-        **patient.payload,
-    }, status=status.HTTP_201_CREATED)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def recorded_patients_list(request):
-    # List recorded patients (Synapse). Same shape as frontend expects.
-    patients = RecordedPatient.objects.all()[:100]
-    out = []
-    for p in patients:
-        out.append({
-            'id': p.external_id,
-            'name': p.name or 'Unknown',
-            'age': p.age or '',
-            'createdAt': p.created_at.isoformat() if p.created_at else '',
-            **p.payload,
-        })
-    return Response(out)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def recorded_patient_delete(request, external_id):
-    """Delete a recorded patient by external_id."""
-    try:
-        patient = RecordedPatient.objects.get(external_id=external_id)
-    except RecordedPatient.DoesNotExist:
-        return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
-    patient.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def audio_extract(request):
@@ -271,9 +227,32 @@ def audio_extract(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         audio_bytes = audio_file.read()
-        mime = audio_file.content_type or 'audio/webm'
-        if mime not in ('audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'):
+        # Strip parameters such as ";codecs=opus" and map common aliases to types Gemini accepts.
+        raw_mime = (audio_file.content_type or '').split(';')[0].strip().lower()
+        mime_aliases = {
+            'audio/x-m4a': 'audio/mp4',
+            'audio/m4a': 'audio/mp4',
+            'audio/x-wav': 'audio/wav',
+            'audio/wave': 'audio/wav',
+            'audio/mp3': 'audio/mpeg',
+            'video/webm': 'audio/webm',
+        }
+        mime = mime_aliases.get(raw_mime, raw_mime)
+        if mime not in ('audio/webm', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac'):
             mime = 'audio/webm'
+        logging.getLogger(__name__).info(
+            'audio/extract upload: content_type=%r -> mime=%r, bytes=%d', audio_file.content_type, mime, len(audio_bytes)
+        )
+        if len(audio_bytes) < 1000:
+            return Response(
+                {'detail': 'The recording is empty or too short. Hold the mic for a few seconds of speech and try again.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(audio_bytes) > 19 * 1024 * 1024:
+            return Response(
+                {'detail': 'The recording is too large to send inline (limit about 20 MB). Use a shorter clip.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         previous_context = request.data.get('previous_context') or request.POST.get('previous_context') or ''
         patients_context = (request.data.get('patients_context') or request.POST.get('patients_context') or '').strip()
         response_language = (request.data.get('response_language') or request.POST.get('response_language') or '').strip()
@@ -310,6 +289,7 @@ def audio_extract(request):
             'error': result.get('error', ''),
         }, status=status.HTTP_200_OK)
     except Exception as e:
+        logging.getLogger(__name__).exception('Unhandled error in %s', request.path)
         return Response(
             {'detail': str(e), 'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -364,6 +344,7 @@ def intake_from_text_api(request):
             'error': result.get('error', ''),
         }, status=status.HTTP_200_OK)
     except Exception as e:
+        logging.getLogger(__name__).exception('Unhandled error in %s', request.path)
         return Response(
             {'detail': str(e), 'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

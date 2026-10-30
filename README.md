@@ -24,7 +24,7 @@ A **Diagnostic Assistant** that captures patient–clinician conversations and t
 
 - **Backend**: Django, Django REST Framework, SQLite, Python
 - **Frontend**: React, Vite, TypeScript, CSS
-- **AI**: Gemini API (Gemini 2.5 Flash)
+- **AI**: Gemini API (Gemini 3.8 Flash, with 3.6 Flash and 3.5 Flash-Lite fallbacks)
 
 ## Quick start
 

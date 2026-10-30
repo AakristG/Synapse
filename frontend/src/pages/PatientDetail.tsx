@@ -443,7 +443,7 @@ export default function PatientDetail() {
     return (
       <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center p-6">
         <p className="text-neutral-600 font-medium">Patient not found.</p>
-        <Link to="/patients" className="mt-4 text-red-600 font-bold flex items-center gap-2 hover:underline">
+        <Link to="/patients" className="mt-4 text-rose-600 font-bold flex items-center gap-2 hover:underline">
           <ArrowLeft size={18} />
           Back to All Patients
         </Link>
@@ -452,18 +452,18 @@ export default function PatientDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 phase-in">
-      <header className="sticky top-0 z-10 h-14 border-b border-neutral-200 bg-white px-6 flex items-center justify-between print:flex">
-        <div className="flex items-center gap-4">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-10 h-16 border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-5 sm:px-6 flex items-center justify-between gap-4 print:flex">
+        <div className="flex items-center gap-4 min-w-0">
           <Link
             to="/patients"
-            className="print:hidden flex items-center gap-2 text-neutral-600 hover:text-red-600 font-bold text-sm"
+            className="print:hidden flex items-center gap-2 text-slate-600 hover:text-rose-800 font-medium text-sm shrink-0"
           >
-            <ArrowLeft size={20} />
-            Back to All Patients
+            <ArrowLeft size={18} />
+            Patients
           </Link>
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-red-600 rounded-xl flex items-center justify-center text-white">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-9 h-9 bg-rose-800 rounded-xl flex items-center justify-center text-white shrink-0">
               <Stethoscope size={18} />
             </div>
             <div>
@@ -479,7 +479,7 @@ export default function PatientDetail() {
             type="button"
             onClick={handleDownloadPdf}
             disabled={!medicalPdfUrl}
-            className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2.5 bg-rose-800 text-white rounded-xl text-sm font-semibold hover:bg-rose-900 disabled:opacity-50"
           >
             <Download size={18} />
             Download PDF
@@ -487,7 +487,7 @@ export default function PatientDetail() {
           <button
             type="button"
             onClick={handleDelete}
-            className="flex items-center gap-2 px-4 py-2.5 border border-red-200 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50"
+            className="flex items-center gap-2 px-4 py-2.5 border border-rose-200 rounded-xl text-sm font-bold text-rose-600 hover:bg-rose-50"
           >
             <Trash2 size={18} />
             Delete patient
@@ -522,7 +522,7 @@ export default function PatientDetail() {
                     <div
                       className={`max-w-[85%] p-3 rounded-xl text-sm ${
                         line.speaker === 'Clinician'
-                          ? 'bg-red-50 border border-red-100 text-red-900'
+                          ? 'bg-rose-50 border border-rose-100 text-rose-900'
                           : 'bg-emerald-50 border border-emerald-100 text-emerald-900'
                       }`}
                     >
@@ -555,7 +555,7 @@ export default function PatientDetail() {
                     }
                     handleViewInLanguage(lang)
                   }}
-                  className="px-3 py-2 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                  className="px-3 py-2 rounded-lg border border-neutral-200 text-sm text-neutral-700 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
                 >
                   <option value="">Original</option>
                   <option value="Spanish">Spanish</option>
@@ -615,7 +615,7 @@ export default function PatientDetail() {
                       <button
                         type="button"
                         onClick={() => removeDiagnosis(i)}
-                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 print:hidden"
+                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 print:hidden"
                         title="Remove this diagnosis"
                         aria-label="Remove diagnosis"
                       >
@@ -634,7 +634,7 @@ export default function PatientDetail() {
                   onChange={(e) => setNewDiagnosis(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDiagnosis())}
                   placeholder="Add diagnosis..."
-                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
                 />
                 <button
                   type="button"
@@ -662,7 +662,7 @@ export default function PatientDetail() {
                       <button
                         type="button"
                         onClick={() => removeTreatment(i)}
-                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 print:hidden mt-0.5"
+                        className="shrink-0 p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 print:hidden mt-0.5"
                         title="Remove this step"
                         aria-label="Remove step"
                       >
@@ -681,7 +681,7 @@ export default function PatientDetail() {
                   onChange={(e) => setNewTreatmentStep(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTreatment())}
                   placeholder="Add treatment step..."
-                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
                 />
                 <button
                   type="button"
@@ -730,7 +730,7 @@ export default function PatientDetail() {
                   placeholder="e.g. Add chest pain to symptoms, or type in Spanish, French, etc...."
                   disabled={isSendingEdit}
                   rows={3}
-                  className="w-full px-4 py-3 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 disabled:opacity-50 resize-y"
+                  className="w-full px-4 py-3 rounded-xl border border-neutral-200 text-sm placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 disabled:opacity-50 resize-y"
                 />
                 <div className="flex justify-end gap-2">
                   <button
@@ -744,7 +744,7 @@ export default function PatientDetail() {
                   <button
                     type="submit"
                     disabled={!editMessage.trim() || isSendingEdit}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-800 text-white rounded-xl text-sm font-bold hover:bg-rose-900 disabled:opacity-50"
                   >
                     {isSendingEdit ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                     {isSendingEdit ? 'Updating...' : 'Send to Synapse'}
@@ -819,7 +819,7 @@ export default function PatientDetail() {
               <div className="flex-1 min-h-0 overflow-auto px-6 py-4">
                 {isTranslating ? (
                   <div className="flex flex-col items-center justify-center py-12 text-neutral-500">
-                    <Loader2 size={40} className="animate-spin text-red-500 mb-4" />
+                    <Loader2 size={40} className="animate-spin text-rose-500 mb-4" />
                     <p className="font-medium">Translating with Synapse...</p>
                   </div>
                 ) : translatedDocument ? (
